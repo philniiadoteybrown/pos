@@ -45,6 +45,7 @@ SELECT sales.*, customers.name AS customer_name
 FROM sales
 LEFT JOIN customers ON sales.customer_id = customers.id
 $where
+ORDER BY sales.created_at DESC, sales.id DESC
 LIMIT $offset,$limit
 ";
 

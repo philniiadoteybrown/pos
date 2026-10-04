@@ -5,7 +5,7 @@ include "assets/scripts/auth.php";
 include "assets/scripts/dbconn.php";
 
 // 🔍 GET ID
-if(!isset($_GET['id'])){
+if(!isset($_GET['id']) || empty($_GET['id'])){
     die("❌ No product selected");
 }
 
@@ -13,6 +13,11 @@ $productid = mysqli_real_escape_string($conn, $_GET['id']);
 
 // 🔍 FETCH DATA
 $res = mysqli_query($conn,"SELECT * FROM products WHERE productid='$productid'");
+
+if(!$res){
+    die("❌ Database error: " . mysqli_error($conn));
+}
+
 $data = mysqli_fetch_assoc($res);
 
 if(!$data){
@@ -23,90 +28,94 @@ if(!$data){
 // ================= UPDATE =================
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
-    $pname = mysqli_real_escape_string($conn, $_POST['pname']);
-    $pdesc = mysqli_real_escape_string($conn, $_POST['pdesc']);
-    $unit = mysqli_real_escape_string($conn, $_POST['unit']);
-    $qty = $_POST['qty'];
-    $qtyperunit = $_POST['qpu'];
-    $unitprice = $_POST['unitprice'];
-    $sellingprice = $_POST['sellingprice'];
-    $sellingpricebulk = $_POST['sellingpricebulk'];
-    $qtyalert = $_POST['qtyalert'];
+    // ONLY THESE TWO VALUES CAN BE EDITED
+    $qty = filter_var($_POST['qty'] ?? null, FILTER_VALIDATE_FLOAT);
+    $qtyalert = filter_var($_POST['qtyalert'] ?? null, FILTER_VALIDATE_FLOAT);
 
-    // ✅ CATEGORY FIX (same logic as your working version)
-    $category_select = $_POST['category_select'] ?? '';
-    $new_category    = $_POST['new_category'] ?? '';
-
-    if(!empty($new_category)){
-        $catname = mysqli_real_escape_string($conn, $new_category);
-        mysqli_query($conn,"INSERT INTO category(catname) VALUES('$catname')");
-    } else {
-        $catname = mysqli_real_escape_string($conn, $category_select);
+    if($qty === false || $qty < 0){
+        $errmsg = "Quantity Purchased must be a valid number.";
+    }
+    elseif($qtyalert === false || $qtyalert < 0){
+        $errmsg = "Quantity Alert must be a valid number.";
     }
 
-    // 🧮 CALCULATIONS (same logic as add product)
-    $costperunit = $unitprice / $qtyperunit;
-    $stock = $qty * $qtyperunit;
-    $tp = $qty * $unitprice;
+    if(!isset($errmsg)){
 
-    mysqli_begin_transaction($conn);
+        // 🔒 ALL OTHER VALUES COME FROM DATABASE
+        $qtyperunit = (float)$data['qtyperunit'];
+        $unitprice  = (float)$data['unitprice'];
 
-    try {
+        // 🧮 CALCULATIONS
+        $stock = $qty * $qtyperunit;
+        $tp = $qty * $unitprice;
 
-        // 🔄 UPDATE PRODUCTS
-        mysqli_query($conn,"
-            UPDATE products SET
-            pname='$pname',
-            pdesc='$pdesc',
-            unit='$unit',
-            qty='$qty',
-            unitprice='$unitprice',
-            sellingprice='$sellingprice',
-            bulkprice='$sellingpricebulk',
-            qtyalert='$qtyalert',
-            category='$catname',
-            qtyperunit='$qtyperunit',
-            costperunit='$costperunit',
-            totalstock='$stock'
-            WHERE productid='$productid'
-        ");
+        mysqli_begin_transaction($conn);
 
-        // 🔄 UPDATE PURCHASE ITEMS
-        mysqli_query($conn,"
-            UPDATE purchase_items SET
-            pname='$pname',
-            pdesc='$pdesc',
-            unit='$unit',
-            qty='$qty',
-            unitprice='$unitprice',
-            sellingprice='$sellingprice',
-            qtyalert='$qtyalert',
-            totalqty='$stock',
-            totalpurchase='$tp',
-            bulkprice='$sellingpricebulk'
-            WHERE productid='$productid'
-        ");
+        try {
 
-        mysqli_commit($conn);
+            // 🔄 UPDATE PRODUCTS
+            mysqli_query($conn,"
+                UPDATE products SET
+                    qty='$qty',
+                    qtyalert='$qtyalert',
+                    totalstock='$stock'
+                WHERE productid='$productid'
+            ");
 
-        $msg="Successfully Updated.";
-        header('refresh:2; url=products.php');
+            if(mysqli_affected_rows($conn) < 0){
+                throw new Exception(mysqli_error($conn));
+            }
 
-    } catch(Exception $e){
+            // 🔄 UPDATE PURCHASE ITEMS
+            $purchaseUpdate = mysqli_query($conn,"
+                UPDATE purchase_items SET
+                    qty='$qty',
+                    qtyalert='$qtyalert',
+                    totalqty='$stock',
+                    totalpurchase='$tp'
+                WHERE productid='$productid'
+            ");
 
-        mysqli_rollback($conn);
-        $errmsg="Update failed.";
+            if(!$purchaseUpdate){
+                throw new Exception(mysqli_error($conn));
+            }
+
+            mysqli_commit($conn);
+
+            $msg = "Successfully Updated.";
+
+            // Reload data
+            $reload = mysqli_query(
+                $conn,
+                "SELECT * FROM products WHERE productid='$productid' LIMIT 1"
+            );
+
+            if($reload){
+                $data = mysqli_fetch_assoc($reload);
+            }
+
+            header('refresh:2; url=products.php');
+
+        } catch(Exception $e){
+
+            mysqli_rollback($conn);
+
+            $errmsg = "Update failed: " . $e->getMessage();
+        }
     }
 }
 ?>
 
 <!DOCTYPE html>
-<html>
 
+<html>
 
 <head>
 
-    <?php include "assets/sections/headers/header_tag.php" ?>
+
+<?php include "assets/sections/headers/header_tag.php" ?>
+
+
 </head>
 
 <body class="fixed-left">
@@ -133,160 +142,155 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <div class="row">
                             <div class="col-lg-12">
 
-                                <div class="card m-b-30">
-                                    <div class="card-body bootstrap-select-1">
-                                        <h2>Edit Product</h2>
-                                        <?php if(isset($msg)){ ?>
-                                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                                            <button type="button" class="close" data-dismiss="alert"
-                                                aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                                            <?php echo $msg ?>
-                                        </div>
-                                        <?php } ?>
-                                        <?php if(isset($errmsg)){ ?>
-                                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                                            <button type="button" class="close" data-dismiss="alert"
-                                                aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                                            <?php echo $msg ?>
-                                        </div>
-                                        <?php } ?>
-                                        <form method="post" action="">
 
-                                            <div class="card-body">
+                            <div class="card m-b-30">
+                                <div class="card-body bootstrap-select-1">
 
-                                                <div class="form-group">
-                                                    <label>Product Name</label>
-                                                    <input type="text" class="form-control" name="pname"
-                                                        value="<?php echo $data['pname']; ?>" required>
-                                                </div>
+                                    <h2>Edit Product</h2>
 
-                                                <div class="form-group">
-                                                    <label>Product Description</label>
-                                                    <input type="text" class="form-control" name="pdesc"
-                                                        value="<?php echo $data['pdesc']; ?>" required>
-                                                </div>
-
-                                                <div class="section-title">Unit Measure</div>
-
-                                                <div class="form-group">
-                                                    <label>Select Measure</label>
-                                                    <select class="form-control" name="unit">
-                                                        <option value="<?php echo $data['unit']; ?>">
-                                                            <?php echo $data['unit']; ?></option>
-                                                        <option value="Crate(s)">Crate</option>
-                                                        <option value="Carton(s)">Carton</option>
-                                                        <option value="Dozen(s)">Dozen</option>
-                                                        <option value="Sack(s)">Sack</option>
-                                                        <option value="Litres">Litres</option>
-                                                        <option value="kg(s)">KG</option>
-                                                        <option value="Piece(s)">Pieces</option>
-                                                        <option value="Box(es)">Box</option>
-                                                        <option value="Packs">Packs</option>
-                                                        <option value="Rows">Rows</option>
-                                                    </select>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Quantity per Unit</label>
-                                                    <input type="number" class="form-control" name="qpu"
-                                                        value="<?php echo $data['qtyperunit']; ?>" required>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Select Category</label>
-                                                    <select name="category_select" class="form-control">
-                                                        <option value="">Select Category</option>
-                                                        <?php
-$res=mysqli_query($conn,"SELECT * FROM category");
-while($c=mysqli_fetch_assoc($res)){
-$selected = ($c['catname'] == $data['category']) ? "selected" : "";
-echo "<option value='{$c['catname']}' $selected>{$c['catname']}</option>";
-}
-?>
-                                                    </select>
-
-                                                    <br>
-                                                    <label>Or Add New :</label><br>
-                                                    <input class="form-control" type="text" name="new_category"
-                                                        placeholder="Category name">
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Unit Cost</label>
-                                                    <div class="input-group">
-                                                        <div class="input-group-prepend">
-                                                            <div class="input-group-text">GH¢</div>
-                                                        </div>
-                                                        <input type="number" step="0.01" class="form-control"
-                                                            name="unitprice" value="<?php echo $data['unitprice']; ?>"
-                                                            required>
-                                                    </div>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Quantity Purchased</label>
-                                                    <input type="number" class="form-control" name="qty"
-                                                        value="<?php echo $data['qty']; ?>" required>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Selling Price (Single)</label>
-                                                    <div class="input-group">
-                                                        <div class="input-group-prepend">
-                                                            <div class="input-group-text">GH¢</div>
-                                                        </div>
-                                                        <input type="number" step="0.01" class="form-control"
-                                                            name="sellingprice"
-                                                            value="<?php echo $data['sellingprice']; ?>" required>
-                                                    </div>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Selling Price (Bulk)</label>
-                                                    <div class="input-group">
-                                                        <div class="input-group-prepend">
-                                                            <div class="input-group-text">GH¢</div>
-                                                        </div>
-                                                        <input type="number" step="0.01" class="form-control"
-                                                            name="sellingpricebulk"
-                                                            value="<?php echo $data['bulkprice']; ?>" required>
-                                                    </div>
-                                                </div>
-
-                                                <div class="form-group">
-                                                    <label>Quantity Alert</label>
-                                                    <input type="number" class="form-control" name="qtyalert"
-                                                        value="<?php echo $data['qtyalert']; ?>" required>
-                                                </div>
-
-                                            </div>
-
-                                            <div class="card-footer">
-                                                <button class="btn btn-primary" type="submit">Update</button>
-                                            </div>
-
-                                        </form>
-
+                                    <?php if(isset($msg)){ ?>
+                                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                        <button type="button" class="close" data-dismiss="alert"
+                                            aria-label="Close">
+                                            <span aria-hidden="true">&times;</span>
+                                        </button>
+                                        <?php echo htmlspecialchars($msg, ENT_QUOTES, 'UTF-8'); ?>
                                     </div>
+                                    <?php } ?>
+
+                                    <?php if(isset($errmsg)){ ?>
+                                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                        <button type="button" class="close" data-dismiss="alert"
+                                            aria-label="Close">
+                                            <span aria-hidden="true">&times;</span>
+                                        </button>
+                                        <?php echo htmlspecialchars($errmsg, ENT_QUOTES, 'UTF-8'); ?>
+                                    </div>
+                                    <?php } ?>
+
+                                    <form method="post" action="">
+
+                                        <div class="card-body">
+
+                                            <!-- PRODUCT NAME -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Product Name</h5>
+                                                <p class="text-muted mb-3">
+                                                    <?php echo htmlspecialchars($data['pname'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </p>
+                                            </div>
+
+                                            <!-- DESCRIPTION -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Product Description</h5>
+                                                <p class="text-muted mb-3">
+                                                    <?php echo htmlspecialchars($data['pdesc'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </p>
+                                            </div>
+
+                                            <div class="section-title">Unit Measure</div>
+
+                                            <!-- UNIT -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Unit Measure</h5>
+                                                <p class="text-muted mb-3">
+                                                    <?php echo htmlspecialchars($data['unit'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </p>
+                                            </div>
+
+                                            <!-- QPU -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Quantity per Unit</h5>
+                                                <p class="text-muted mb-3">
+                                                    <?php echo htmlspecialchars($data['qtyperunit'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </p>
+                                            </div>
+
+                                            <!-- CATEGORY -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Category</h5>
+                                                <p class="text-muted mb-3">
+                                                    <?php echo htmlspecialchars($data['category'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </p>
+                                            </div>
+
+                                            <!-- UNIT COST -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Unit Cost</h5>
+                                                <p class="text-muted mb-3">
+                                                    GH¢ <?php echo number_format((float)$data['unitprice'], 2); ?>
+                                                </p>
+                                            </div>
+
+                                             <!-- SELLING PRICE -->
+                                            <div class="form-group">
+                                                <h5 class="mb-1">Selling Price</h5>
+                                                <p class="text-muted mb-3">
+                                                    GH¢ <?php echo number_format((float)$data['sellingprice'], 2); ?>
+                                                </p>
+                                            </div>
+                                            <!-- EDITABLE QUANTITY -->
+                                            <div class="form-group">
+                                                <label>Quantity Purchased</label>
+                                                <input type="number"
+                                                    class="form-control"
+                                                    name="qty"
+                                                    value="<?php echo htmlspecialchars($data['qty'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    min="0"
+                                                    step="any"
+                                                    required>
+                                            </div>
+
+                                           
+
+                                            <!-- EDITABLE QUANTITY ALERT -->
+                                            <div class="form-group">
+                                                <label>Quantity Alert</label>
+                                                <input type="number"
+                                                    class="form-control"
+                                                    name="qtyalert"
+                                                    value="<?php echo htmlspecialchars($data['qtyalert'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    min="0"
+                                                    step="any"
+                                                    required>
+                                            </div>
+
+                                        </div>
+
+                                        <div class="card-footer">
+                                            <button class="btn btn-primary" type="submit">
+                                                Update
+                                            </button>
+                                        </div>
+
+                                    </form>
+
                                 </div>
-
-
                             </div>
 
 
                         </div>
-                    </div>
 
-                </div><!-- end row -->
-            </div><!-- container -->
-        </div><!-- Page content Wrapper -->
-    </div><!-- content -->
-    <footer class="footer"><?php include "assets/sections/footers/footer.php" ?></footer>
-    </div><!-- End Right content here -->
-    </div><!-- END wrapper -->
-    <!-- jQuery  -->
-    <?php include "assets/sections/footers/jqueryscripts.php" ?>
+
+                    </div>
+                </div>
+
+            </div><!-- end row -->
+        </div><!-- container -->
+    </div><!-- Page content Wrapper -->
+</div><!-- content -->
+
+<footer class="footer">
+    <?php include "assets/sections/footers/footer.php" ?>
+</footer>
+
+</div><!-- End Right content here -->
+</div><!-- END wrapper -->
+
+<!-- jQuery -->
+<?php include "assets/sections/footers/jqueryscripts.php" ?>
+
+
 </body>
-<!-- Mirrored from mannatthemes.com/annex/vertical/form-advanced.html by HTTrack Website Copier/3.x [XR&CO'2014], Sat, 25 Apr 2026 11:14:09 GMT -->
 
 </html>

@@ -41,8 +41,27 @@ if ($start_date != "" && $end_date != "") {
 }
 
 // QUERY
-$query = "SELECT * FROM purchase_items $where ORDER BY created_at DESC LIMIT $offset,$limit";
+// Expected Profit = total quantity in pieces × (selling price per piece - cost per piece).
+$query = "SELECT purchase_items.*,
+                 products.sellingprice,
+                 (purchase_items.totalqty * (
+                     products.sellingprice -
+                     (purchase_items.unitprice / NULLIF((purchase_items.totalqty / NULLIF(purchase_items.qty, 0)), 0))
+                 )) AS expected_profit
+          FROM purchase_items
+          LEFT JOIN products ON purchase_items.productid = products.productid
+          $where
+          ORDER BY purchase_items.created_at DESC, purchase_items.id DESC
+          LIMIT $offset,$limit";
 $result = mysqli_query($conn, $query);
+
+// Total rows for AJAX pagination
+$countQuery = "SELECT COUNT(*) AS total FROM purchase_items $where";
+$countResult = mysqli_query($conn, $countQuery);
+$countRow = $countResult ? mysqli_fetch_assoc($countResult) : ['total' => 0];
+$total = (int)($countRow['total'] ?? 0);
+$total_pages = ($limit > 0) ? (int)ceil($total / $limit) : 1;
+if ($total_pages < 1) $total_pages = 1;
  ?>
 
 
@@ -56,6 +75,7 @@ $result = mysqli_query($conn, $query);
             <th>Cost (GH¢)</th>
             <th>Stock</th>
             <th>Total Cost (GH¢)</th>
+            <th>Expected Profit (GH¢)</th>
             <th>Type</th>
             <th>Date</th>
             <!-- <th>Action</th> -->
@@ -101,9 +121,11 @@ $pcs  = $fetch['totalqty'] % $qpu;
             </td>
 
             <td>
+                <?php echo number_format((float)$fetch['totalpurchase'], 2); ?>
+            </td>
 
-                <?php echo $fetch['totalpurchase']?>
-
+            <td>
+                <?php echo number_format((float)($fetch['expected_profit'] ?? 0), 2); ?>
             </td>
 
             <td>
@@ -149,9 +171,55 @@ else{
         <?php } } else { ?>
 
         <tr>
-            <td colspan="7">No records found</td>
+            <td colspan="8">No records found</td>
         </tr>
 
         <?php } ?>
     </tbody>
 </table>
+
+<!-- AJAX Pagination -->
+<div class="d-flex justify-content-between align-items-center mt-3 flex-wrap">
+    <nav>
+        <ul class="pagination mb-0">
+            <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
+                <a class="page-link" href="#"
+                   onclick="event.preventDefault(); <?php if($page > 1){ ?>loadData(<?= $page-1 ?>)<?php } ?>">
+                    Previous
+                </a>
+            </li>
+
+            <?php
+            $start = max(1, $page - 2);
+            $end   = min($total_pages, $page + 2);
+            for($i = $start; $i <= $end; $i++):
+            ?>
+            <li class="page-item <?= ($i == $page) ? 'active' : '' ?>">
+                <a class="page-link" href="#"
+                   onclick="event.preventDefault(); loadData(<?= $i ?>)">
+                    <?= $i ?>
+                </a>
+            </li>
+            <?php endfor; ?>
+
+            <li class="page-item <?= ($page >= $total_pages) ? 'disabled' : '' ?>">
+                <a class="page-link" href="#"
+                   onclick="event.preventDefault(); <?php if($page < $total_pages){ ?>loadData(<?= $page+1 ?>)<?php } ?>">
+                    Next
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="text-muted">
+        <?php
+        if($total > 0){
+            $startRow = $offset + 1;
+            $endRow = min($offset + $limit, $total);
+            echo "Showing $startRow to $endRow of $total entries";
+        } else {
+            echo "No entries found";
+        }
+        ?>
+    </div>
+</div>

@@ -1,254 +1,294 @@
 <?php
-$pagetitle="Products";
-include "assets/scripts/auth.php";
+$pagetitle = "Product Units";
 
+include "assets/scripts/auth.php";
 include "assets/scripts/dbconn.php";
 include "assets/scripts/paging.php";
-
-
-
-$where = "";
-
-if($search != ""){
-    $where = "WHERE pname LIKE '%$search%' 
-              OR productid LIKE '%$search%'";
-}
-
-// total rows
-$totalRes = mysqli_query($conn,"SELECT COUNT(*) as total FROM customers $where");
-$totalRow = mysqli_fetch_assoc($totalRes);
-$total = $totalRow['total'];
-
-$total_pages = ceil($total / $limit);
-
-// fetch data
-$res = mysqli_query($conn,"
-SELECT * FROM customers 
-$where
-ORDER BY name ASC
-LIMIT $offset, $limit
-");
-
-if(isset($_GET['deleted'])){
-    echo "
-    <script>
-    Swal.fire({
-        icon: 'success',
-        title: 'Deleted!',
-        text: 'Unit has been deleted successfully',
-        timer: 1500,
-        showConfirmButton: false
-    });
-    </script>
-    ";
-}
 ?>
 
 <!DOCTYPE html>
 <html>
-
 
 <head>
 
     <?php include "assets/sections/headers/header_tag.php" ?>
 
     <style>
-    .bp-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: none;
-        z-index: 1000;
-    }
+        .unit-search-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
 
-    .bp-modal {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 400px;
-        background: #fff;
-        border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        display: none;
-        z-index: 1001;
-    }
+        .unit-search-bar input {
+            flex: 1;
+        }
 
-    .bp-header,
-    .bp-footer {
-        padding: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #eee;
-    }
+        @media(max-width: 576px) {
+            .unit-search-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
 
-    .bp-body {
-        padding: 15px;
-    }
-
-    .bp-input {
-        width: 100%;
-        padding: 8px;
-        margin-top: 8px;
-    }
-
-    .bp-btn {
-        width: 100%;
-        padding: 10px;
-        background: #007bff;
-        color: #fff;
-        border: none;
-        cursor: pointer;
-    }
+            .unit-search-bar select {
+                width: 100% !important;
+            }
+        }
     </style>
+
 </head>
 
 <body class="fixed-left">
+
     <!-- Loader -->
     <div id="preloader">
         <div id="status">
             <div class="spinner"></div>
         </div>
-    </div><!-- Begin page -->
+    </div>
+
+    <!-- Begin page -->
     <div id="wrapper">
+
         <!-- ========== Left Sidebar Start ========== -->
         <?php include "assets/sections/leftside.php" ?>
         <!-- Left Sidebar End -->
+
+
         <!-- Start right Content here -->
         <div class="content-page">
+
             <!-- Start content -->
             <div class="content">
+
                 <!-- Top Bar Start -->
                 <?php include "assets/sections/topbar.php" ?>
                 <!-- Top Bar End -->
+
+
                 <div class="page-content-wrapper">
+
                     <div class="container-fluid">
+
                         <div class="row">
                             <div class="col-sm-12">
-                                <!-- <div class="page-title-box">
-                                    <h4 class="page-title">Datatable</h4>
-                                </div> -->
                                 <br>
                             </div>
-                        </div><!-- end page title end breadcrumb -->
+                        </div>
+
+
+                        <!-- Product Units -->
                         <div class="row">
+
                             <div class="col-12">
+
                                 <div class="card m-b-30">
+
                                     <div class="card-body">
+
                                         <h2>Product Units</h2>
 
-                                        <div style="display:flex; gap:10px; align-items:center;">
-
-                                            <input type="text" id="search" class="form-control"
-                                                placeholder="Search product by ID..." style="flex:1;">
-
-                                            <select id="limit" class="form-control" style="width:auto;">
-                                                <option value="5">5</option>
-                                                <option value="10" selected>10</option>
-                                                <option value="25">25</option>
-                                            </select>
-
-
-                                            </form>
-                                        </div>
+                                        <p class="text-muted">
+                                            Manage the different selling units for your products.
+                                        </p>
 
                                         <hr>
 
-                                        <div id="tableData"></div>
+
+                                        <!-- SEARCH BAR -->
+                                        <div class="unit-search-bar">
+
+                                            <input
+                                                type="text"
+                                                id="search"
+                                                class="form-control"
+                                                placeholder="Search product or unit..."
+                                                autocomplete="off"
+                                            >
+
+
+                                            <select
+                                                id="limit"
+                                                class="form-control"
+                                                style="width:auto;"
+                                            >
+
+                                                <option value="5">5</option>
+
+                                                <option value="10" selected>
+                                                    10
+                                                </option>
+
+                                                <option value="25">
+                                                    25
+                                                </option>
+
+                                                <option value="50">
+                                                    50
+                                                </option>
+
+                                            </select>
+
+                                        </div>
+
+
+                                        <hr>
+
+
+                                        <!-- TABLE -->
+                                        <div id="tableData">
+
+                                            <div class="text-center p-4">
+
+                                                <div class="spinner-border text-primary"
+                                                    role="status">
+
+                                                    <span class="sr-only">
+                                                        Loading...
+                                                    </span>
+
+                                                </div>
+
+                                            </div>
+
+                                        </div>
+
+
                                     </div>
 
-                                    <script>
-                                    let timer;
-
-                                    function loadData(page = 1) {
-
-                                        let search = document.getElementById("search").value;
-                                        let limit = document.getElementById("limit").value;
-
-                                        fetch(
-                                                `assets/scripts/fetch_units.php?search=${encodeURIComponent(search)}&page=${page}&limit=${limit}`
-                                            )
-                                            .then(res => res.text())
-                                            .then(data => {
-                                                document.getElementById("tableData").innerHTML = data;
-                                            });
-                                    }
-
-                                    // 🔎 key press search (debounced)
-                                    document.getElementById("search").addEventListener("keyup", function() {
-
-                                        clearTimeout(timer);
-
-                                        timer = setTimeout(() => {
-                                            loadData(1); // reset to page 1
-                                        }, 300); // delay for performance
-                                    });
-
-                                    // 🔢 change rows per page
-                                    document.getElementById("limit").addEventListener("change", function() {
-                                        loadData(1);
-                                    });
-
-                                    // first load
-                                    loadData();
-
-                                    document.getElementById("searchInput").addEventListener("keyup",
-                                        function() {
-                                            let filter = this.value.toLowerCase();
-                                            let rows = document.querySelectorAll("#prodList tr");
-
-                                            rows.forEach(row => {
-                                                let text = row.textContent.toLowerCase();
-                                                row.style.display = text.includes(filter) ? "" :
-                                                    "none";
-                                            });
-                                        });
-                                    </script>
                                 </div>
+
                             </div>
-                        </div><!-- end col -->
-                    </div><!-- end row -->
 
-                </div><!-- container -->
-            </div><!-- Page content Wrapper -->
-        </div><!-- content -->
-        <footer class="footer"> <?php include "assets/sections/footers/footer.php" ?>.</footer>
-    </div><!-- End Right content here -->
-    </div><!-- END wrapper -->
+                        </div>
+                        <!-- End Product Units -->
 
 
+                    </div>
+                    <!-- container -->
+
+                </div>
+                <!-- Page content Wrapper -->
+
+            </div>
+            <!-- content -->
 
 
-    <!-- jQuery  -->
+            <footer class="footer">
+                <?php include "assets/sections/footers/footer.php" ?>
+            </footer>
+
+
+        </div>
+        <!-- End Right content here -->
+
+    </div>
+    <!-- END wrapper -->
+
+
+    <!-- jQuery -->
     <?php include "assets/sections/footers/jqueryscripts.php" ?>
 
 
-
     <script>
-    function sellProduct(button) {
-        // Grab data from button
-        let id = button.getAttribute('data-cid');
-        let name = button.getAttribute('data-cname');
-        let phone = button.getAttribute('data-cphone');
-        let bal = button.getAttribute('data-cbalance');
 
-        // ID -> input .value so it submits
-        document.getElementById('modal-cid').value = id;
+        let timer;
 
-        // Name & Description -> span .textContent for display
-        document.getElementById('modal-cid-span').textContent = id;
-        document.getElementById('modal-cname').textContent = name;
-        document.getElementById('modal-cphone').textContent = phone;
-        document.getElementById('modal-cbalance').textContent = bal;
-    }
+
+        // ==========================================
+        // LOAD PRODUCT UNITS
+        // ==========================================
+
+        function loadData(page = 1) {
+
+            let search = document.getElementById("search").value;
+            let limit  = document.getElementById("limit").value;
+
+
+            let url =
+                "assets/scripts/fetch_units.php" +
+                "?search=" + encodeURIComponent(search) +
+                "&page=" + page +
+                "&limit=" + limit;
+
+
+            fetch(url)
+
+                .then(response => {
+
+                    if (!response.ok) {
+                        throw new Error("Failed to load product units");
+                    }
+
+                    return response.text();
+
+                })
+
+                .then(data => {
+
+                    document.getElementById("tableData").innerHTML = data;
+
+                })
+
+                .catch(error => {
+
+                    console.error(error);
+
+                    document.getElementById("tableData").innerHTML = `
+                        <div class="alert alert-danger">
+                            Unable to load product units.
+                        </div>
+                    `;
+
+                });
+
+        }
+
+
+        // ==========================================
+        // SEARCH
+        // ==========================================
+
+        document.getElementById("search").addEventListener(
+            "keyup",
+            function() {
+
+                clearTimeout(timer);
+
+                timer = setTimeout(function() {
+
+                    loadData(1);
+
+                }, 300);
+
+            }
+        );
+
+
+        // ==========================================
+        // CHANGE LIMIT
+        // ==========================================
+
+        document.getElementById("limit").addEventListener(
+            "change",
+            function() {
+
+                loadData(1);
+
+            }
+        );
+
+
+        // ==========================================
+        // FIRST LOAD
+        // ==========================================
+
+        loadData();
+
+
     </script>
 
 
 </body>
-<!-- Mirrored from mannatthemes.com/annex/vertical/tables-datatable.html by HTTrack Website Copier/3.x [XR&CO'2014], Sat, 25 Apr 2026 11:14:37 GMT -->
 
 </html>

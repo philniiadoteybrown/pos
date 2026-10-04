@@ -24,7 +24,7 @@
 </script><!-- Plugins Init js -->
 <script src="assets/pages/form-advanced.js"></script><!-- App js -->
 <script src="assets/js/app.js"></script>
-<script src="assets/js/stop_save.php"></script>
+<!-- <script src="assets/js/stop_save.php"></script> -->
 
 
 <script src="assets/plugins/datatables/jquery.dataTables.min.js"></script>

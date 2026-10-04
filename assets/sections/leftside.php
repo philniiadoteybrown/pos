@@ -19,6 +19,8 @@
                         <span>Products </span><span class="float-right"><i class="mdi mdi-chevron-right"></i></span></a>
                     <ul class="list-unstyled">
                         <li><a href="products.php">Product Stock</a></li>
+                          <!-- <li><a href="outofstock.php">Out of Stock</a></li> -->
+                          <li><a href="budget.php">Out of Stock</a></li>
                         <li><a href="add_products.php">Add Products</a></li>
                         <li><a href="purchaselog.php">Purchase Log</a></li>
                         <li><a href="product_units.php">Product Units</a></li>

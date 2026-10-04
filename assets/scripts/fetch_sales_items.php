@@ -46,21 +46,28 @@ ORDER BY p.category ASC
 LIMIT $offset,$limit
 ");
 
-// GRAND TOTAL
+// GRAND TOTALS
 $totalSales=mysqli_query($conn,"
-SELECT SUM(si.qty*p.sellingprice) as total
+SELECT
+    COALESCE(SUM(si.qty*p.sellingprice),0) AS total_sales,
+    COALESCE(SUM(si.qty*(p.sellingprice-p.costperunit)),0) AS total_profit
 FROM sales_items si
 JOIN products p ON si.product_id=p.productid
 JOIN sales s ON si.sale_id=s.id
 $where
 ");
 
-$grand=mysqli_fetch_assoc($totalSales)['total'] ?? 0;
+$grandRow=mysqli_fetch_assoc($totalSales);
+$grand=$grandRow['total_sales'] ?? 0;
+$grandProfit=$grandRow['total_profit'] ?? 0;
 
 // CATEGORY DAILY SUMMARY
 $summary=mysqli_query($conn,"
-SELECT DATE(s.created_at) as d,p.category,
-SUM(si.qty*p.sellingprice) as total
+SELECT
+    DATE(s.created_at) AS d,
+    p.category,
+    SUM(si.qty*p.sellingprice) AS total,
+    SUM(si.qty*(p.sellingprice-p.costperunit)) AS profit
 FROM sales_items si
 JOIN products p ON si.product_id=p.productid
 JOIN sales s ON si.sale_id=s.id
@@ -82,7 +89,8 @@ $chart[]=$s;
     <tr>
         <th>Date</th>
         <th>Category</th>
-        <th>Total</th>
+        <th>Total Sales</th>
+        <th>Total Profit</th>
     </tr>
 
     <?php foreach($chart as $s): ?>
@@ -90,12 +98,14 @@ $chart[]=$s;
         <td><?= $s['d'] ?></td>
         <td><?= $s['category'] ?></td>
         <td>GHS <?= number_format($s['total'],2) ?></td>
+        <td>GHS <?= number_format($s['profit'],2) ?></td>
     </tr>
     <?php endforeach; ?>
 
 </table>
-
+<hr>
 <!-- MAIN TABLE -->
+ <h4>Total Sales  </h4>
 <table class="table table-bordered">
     <thead>
         <tr>
@@ -130,9 +140,10 @@ $chart[]=$s;
     </tbody>
 </table>
 
-<!-- TOTAL -->
+<!-- TOTALS -->
 <div style="text-align:right;margin-top:10px;">
     <h4>Total Sales: GHS <?= number_format($grand,2) ?></h4>
+    <h4>Total Profit: GHS <?= number_format($grandProfit,2) ?></h4>
 </div>
 
 <!-- PAGINATION -->

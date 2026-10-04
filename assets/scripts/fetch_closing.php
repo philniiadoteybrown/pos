@@ -27,7 +27,7 @@ while($row = mysqli_fetch_assoc($res)){
 
 <tr>
     <td>
-        <?= htmlspecialchars($row['pname']."-".$row['productid']) ?>
+        <?= htmlspecialchars($row['pname']." (".$row['pdesc'].") "." - ".$row['productid']) ?>
         <input type="hidden" name="product_id[]" value="<?= $row['productid'] ?>">
     </td>
 

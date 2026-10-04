@@ -46,14 +46,14 @@ $search_result = mysqli_query($conn,$query);
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span
             aria-hidden="true">&times;</span></button>
-    <?php echo $msg ?>
+    <?php echo $errmsg ?>
 </div>
 <?php } ?>
 <?php if(isset($warnmsg)){ ?>
 <div class="alert alert-warning alert-dismissible fade show" role="alert">
     <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span
             aria-hidden="true">&times;</span></button>
-    <?php echo $msg ?>
+    <?php echo $warnmsg ?>
 </div>
 <?php } ?>
 <table class="table table-bordered" id="prodList">
@@ -67,6 +67,7 @@ $search_result = mysqli_query($conn,$query);
             <th>Purchase Unit Price</th>
             <th>Cost per Item</th>
             <th>Selling Price</th>
+            <th>Modify</th>
             <th>Action</th>
         </tr>
     </thead>
@@ -80,24 +81,48 @@ while($fetch = mysqli_fetch_assoc($search_result)){
     $stock=$fetch['totalstock']/$unitqty;
     $stockpc=$stock/$unitqty;
     $rows = floor($fetch['totalstock'] / $fetch['qtyperunit']);
-$pcs  = $fetch['totalstock'] % $fetch['qtyperunit'];
-$lowStock = ($fetch['totalstock'] <= $fetch['qtyalert']) ? 'table-danger' : '';
+    $pcs  = $fetch['totalstock'] % $fetch['qtyperunit'];
+
+    /*
+     * Stock status:
+     * 0 stock                    = red
+     * Above 0 and <= alert qty   = yellow
+     * Above alert qty            = green
+     */
+    if((float)$fetch['totalstock'] <= 0){
+        $stockClass = 'stock-out';
+        $stockStyle = 'background-color:#dc3545;color:#fff;';
+        $stockLabel = 'Out of Stock';
+    }elseif((float)$fetch['totalstock'] <= (float)$fetch['qtyalert']){
+        $stockClass = 'stock-alert';
+        $stockStyle = 'background-color:#ffc107;color:#212529;';
+        $stockLabel = 'Minimum Alert';
+    }else{
+        $stockClass = 'stock-ok';
+        $stockStyle = 'background-color:#28a745;color:#fff;';
+        $stockLabel = 'In Stock';
+    }
 ?>
 
-        <tr class="<?php echo $lowStock; ?>">
+        <tr>
 
-            <td><?php echo $fetch['pname']." (".$fetch['pdesc'].")"; ?></td>
+            <td><?php echo $fetch['pname']." (".$fetch['pdesc'].")"; ?>
+                <?php if($fetch['totalstock']==0){?>
+
+                <span class="ti-shopping-cart"> </span>
+
+                <?php }?>
+            </td>
 
             <td><?php echo $fetch['category'] ?></td>
-            <td class="table-info">
+            <td class="<?php echo $stockClass; ?>" style="<?php echo $stockStyle; ?>font-weight:700;text-align:center;">
                 <?php
-$rows = floor($fetch['totalstock'] / $fetch['qtyperunit']);
-$pcs  = $fetch['totalstock'] % $fetch['qtyperunit'];
-
-
-    echo "$rows $measure / $pcs pc(s)";
-
-?>
+                    echo "$rows $measure / $pcs pc(s)";
+                ?>
+                <br>
+                <span style="font-size:11px;">
+                    <?php echo $stockLabel; ?>
+                </span>
             </td>
 
             <!-- <td>
@@ -114,37 +139,53 @@ $pcs  = $fetch['totalstock'] % $fetch['qtyperunit'];
             <td><?php echo $fetch['unitprice'] ?></td>
             <td><?php echo $fetch['costperunit'] ?></td>
             <td><?php echo $fetch['sellingprice'] ?></td>
-
             <td>
-                <button type="button" class="btn btn-sm btn-info" onclick="toggleUnits(this)"
-                    data-id="<?php echo $fetch['productid']; ?>">
+                <button title="View Other Unit Prices" type="button" class="btn btn-sm btn-info"
+                    onclick="toggleUnits(this)" data-id="<?php echo $fetch['productid']; ?>">
                     <span class="fa fa-eye"></span>
                 </button>
 
                 <a href="edit_units.php?id=<?php echo $fetch['productid']; ?>" class="btn btn-sm btn-dark"
                     title="Edit Units">
-                    <span class="fa fa-sliders"> </span>
+                    <span class="fa fa-edit"> </span>
                 </a>
 
-                <a href="add_units.php?id=<?php echo $fetch['productid']; ?>" title="Edit"
-                    class="btn btn-primary btn-animation btn-sm"> <span class="fa fa-tag"></span>
+                <a href="add_units.php?id=<?php echo $fetch['productid']; ?>" title="Add Prices"
+                    class="btn btn-primary btn-animation btn-sm"> <span class="fa fa-plus"></span>
                 </a>
-                <a href="edit_products.php?id=<?php echo $fetch['productid']; ?>" title="Edit"
-                    class="btn btn-warning btn-animation btn-sm"> <span class="fa fa-edit"></span>
+
+
+            </td>
+            <td>
+
+
+                <a href="del_product.php?id=<?php echo $fetch['productid']; ?>" title="Delete Product"
+                    class="btn btn-danger btn-animation btn-sm"
+                    onclick="return confirmDelete('<?php echo addslashes($fetch['pname'].' ('.$fetch['pdesc'].')'); ?>')">
+                    <span class="fa fa-trash"></span>
+                </a>
+
+                <a href="edit_products.php?id=<?php echo $fetch['productid']; ?>" title="Edit Product"
+                    class="btn btn-warning btn-animation btn-sm"
+                    onclick="return confirmEdit('<?php echo addslashes($fetch['pname'].' ('.$fetch['pdesc'].')'); ?>')">
+                    <span class="fa fa-edit"></span>
                 </a>
                 <?php if($fetch['totalstock']<>0){?>
 
                 <a href="restockproducts.php?id=<?php echo $fetch['productid']; ?>" title="Sell Bulk"
-                    class="btn btn-success btn-animation btn-sm"> <span class="fa fa-shopping-basket"></span> </a>
-
-                <?php } else { echo "Re-stock to sell"; }?>
+                    class="btn btn-info btn-animation btn-sm"> <span class="fa fa-shopping-basket"></span> </a>
+                <?php }?>
 
                 <?php if($fetch['totalstock'] <= $fetch['qtyalert']){ ?>
                 <a href="restockproducts.php?id=<?php echo $fetch['productid']; ?>" title="Re-stock"
-                    class="btn btn-danger btn-animation btn-sm"> <span class="fa fa-cart-arrow-down"></span> </a>
+                    class="btn btn-dark btn-animation btn-sm"
+                    onclick="return confirmReStock('<?php echo addslashes($fetch['pname'].' ('.$fetch['pdesc'].')'); ?>')">
+                    <span class="fa fa-cart-arrow-down"></span> </a>
                 <?php } else { ?>
-                <a href="restockproducts.php?id=<?php echo $fetch['productid']; ?>" title="Re-stock"
-                    class="btn btn-primary btn-animation btn-sm"> <span class="fa fa-cart-plus"></span> </a>
+                <a href="restockproducts.php?id=<?php echo $fetch['productid']; ?>" title="Add stock"
+                    class="btn btn-success btn-animation btn-sm"
+                    onclick="return confirmAddStock('<?php echo addslashes($fetch['pname'].' ('.$fetch['pdesc'].')'); ?>')">
+                    <span class="fa fa-cart-plus"></span> </a>
                 <?php } ?>
 
             </td>
@@ -158,7 +199,7 @@ $pcs  = $fetch['totalstock'] % $fetch['qtyperunit'];
         <?php } } else { ?>
 
         <tr>
-            <td colspan="6">No records found</td>
+            <td colspan="9" style="text-align:center;">No records found</td>
         </tr>
 
         <?php } ?>

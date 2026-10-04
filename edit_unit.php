@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                                         </td>
 
                                                         <td>
-                                                            <input type="number" name="price[]" class="form-control"
+                                                            <input  type="number" step="0.01" name="price[]" class="form-control"
                                                                 value="<?= $u['price'] ?>">
                                                         </td>
 

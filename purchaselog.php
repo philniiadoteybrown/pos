@@ -126,12 +126,12 @@ LIMIT $offset, $limit
                                                             style="width:auto;">
 
                                                         <button class="btn btn-primary btn-sm"
-                                                            onclick="applyDateFilter()">
+                                                            type="button" onclick="applyDateFilter()">
                                                             Filter
                                                         </button>
 
                                                         <button class="btn btn-secondary btn-sm"
-                                                            onclick="clearDateFilter()">
+                                                            type="button" onclick="clearDateFilter()">
                                                             Reset
                                                         </button>
 
@@ -150,25 +150,6 @@ LIMIT $offset, $limit
                                             <hr>
                                             <br>
                                             <div id="tableData"></div>
-                                            <div class="d-flex justify-content-between mt-3">
-
-                                                <button class="btn btn-primary btn-sm"
-                                                    onclick="loadData(<?= $page-1 ?>)"
-                                                    <?= ($page <= 1 ? 'disabled' : '') ?>>
-                                                    Previous
-                                                </button>
-
-                                                <span>
-                                                    Page <?= $page ?> of <?= $total_pages ?>
-                                                </span>
-
-                                                <button class="btn btn-primary btn-sm"
-                                                    onclick="loadData(<?= $page+1 ?>)"
-                                                    <?= ($page >= $total_pages ? 'disabled' : '') ?>>
-                                                    Next
-                                                </button>
-
-                                            </div>
 
                                             </form>
                                         </div>
@@ -190,7 +171,7 @@ LIMIT $offset, $limit
                                             let end_date = document.getElementById('end_date').value;
 
                                             fetch(
-                                                    `assets/scripts/fetch_purchaselog.php?page=${page}&search=${search}&filter=${currentFilter}&limit=${limit}&start_date=${start_date}&end_date=${end_date}`
+                                                    `assets/scripts/fetch_purchaselog.php?page=${page}&search=${encodeURIComponent(search)}&filter=${encodeURIComponent(currentFilter)}&limit=${limit}&start_date=${encodeURIComponent(start_date)}&end_date=${encodeURIComponent(end_date)}`
                                                     )
                                                 .then(res => res.text())
                                                 .then(data => {

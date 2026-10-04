@@ -1,11 +1,66 @@
 <?php
-$pagetitle="Add Products";
+$pagetitle="POS Terminal";
 include "assets/scripts/auth.php";
 
 include "assets/scripts/dbconn.php";
 include "assets/scripts/paging.php";
 
 $role = $_SESSION['role'] ?? '';
+
+/* =========================================================
+   AUTO-DETECT THIS POS SERVER LAN IP
+   Used only to build the phone scanner address when the POS
+   itself is opened as http://localhost/...
+   Compatible with older PHP versions used by XAMPP.
+========================================================= */
+function isPrivateIpv4($ip)
+{
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return false;
+    }
+
+    $parts = explode('.', $ip);
+    if (count($parts) !== 4) {
+        return false;
+    }
+
+    $a = (int)$parts[0];
+    $b = (int)$parts[1];
+
+    return (
+        $a === 10 ||
+        ($a === 172 && $b >= 16 && $b <= 31) ||
+        ($a === 192 && $b === 168)
+    );
+}
+
+function detectPosServerIp()
+{
+    /* First use SERVER_ADDR when it is already a LAN address. */
+    $serverAddr = isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : '';
+    if (isPrivateIpv4($serverAddr)) {
+        return $serverAddr;
+    }
+
+    /* Then ask Windows/PHP for the host's resolved IPv4 addresses. */
+    $hostname = gethostname();
+    if ($hostname) {
+        $ips = @gethostbynamel($hostname);
+        if (is_array($ips)) {
+            foreach ($ips as $ip) {
+                if (isPrivateIpv4($ip)) {
+                    return $ip;
+                }
+            }
+        }
+    }
+
+    return $serverAddr && filter_var($serverAddr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)
+        ? $serverAddr
+        : '';
+}
+
+$posServerIp = detectPosServerIp();
 //////////////////////
 
 
@@ -176,7 +231,7 @@ $prices = $_POST['price'];
 
         mysqli_rollback($conn);
 
-        $errsg="Sales transaction failed.";
+        $errmsg="Sales transaction failed.";
     }
 
 } else {
@@ -538,16 +593,947 @@ $prices = $_POST['price'];
     .pos-mode br {
         display: none;
     }
-    </style>
+
+
+    /* Qty input: enough room for at least 3 digits */
+    #productTable .qty {
+        width: 85px !important;
+        min-width: 85px !important;
+        max-width: 85px !important;
+        text-align: center;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+
+    #productTable td:has(.qty) {
+        min-width: 100px;
+    }
+
+    @media (max-width: 575.98px) {
+        #productTable .qty {
+            width: 85px !important;
+            min-width: 85px !important;
+            max-width: 85px !important;
+        }
+    }
+
+
+    .sales-history-frame {
+        width: 100%;
+        overflow: hidden;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    .sales-history-frame iframe {
+        display: block;
+        width: 100%;
+        border: 0;
+    }
+
+    @media (max-width: 991.98px) {
+        .sales-history-frame {
+            overflow-x: auto;
+        }
+
+        .sales-history-frame iframe {
+            min-width: 520px;
+        }
+    }
+
+    /* =========================================================
+       RESPONSIVE POS LAYOUT
+       Desktop: Product/transaction area left, search right.
+       Tablet/Phone: Product Search first, transaction area below.
+       ========================================================= */
+
+    .pos-layout {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: flex-start;
+    }
+
+    .pos-main-panel {
+        order: 1;
+        min-width: 0;
+    }
+
+    .pos-search-panel {
+        order: 2;
+        min-width: 0;
+    }
+
+    .pos-table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    .pos-table-scroll #productTable {
+        width: 100%;
+        min-width: 0;
+        margin-bottom: 0;
+    }
+
+    .pos-table-scroll #productTable th,
+    .pos-table-scroll #productTable td {
+        vertical-align: middle;
+    }
+
+    /* Distinct GH¢ payment field */
+    .payment-field {
+        display: flex;
+        width: 100%;
+        min-height: 82px;
+        border: 3px solid #198754;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 3px 10px rgba(0,0,0,.08);
+    }
+
+    .payment-currency {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 86px;
+        padding: 0 14px;
+        background: #198754;
+        color: #fff;
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: .3px;
+    }
+
+    .payment-field #paid {
+        flex: 1;
+        width: 100%;
+        min-width: 0;
+        height: 76px !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        outline: none;
+        padding: 8px 16px !important;
+        font-size: 38px !important;
+        font-weight: 700;
+        text-align: right;
+    }
+
+    .payment-field #paid:focus {
+        box-shadow: inset 0 0 0 2px rgba(25,135,84,.18) !important;
+    }
+
+    /* Tablet and phone: stack Search FIRST */
+    @media (max-width: 991.98px) {
+        .pos-layout {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pos-search-panel,
+        .pos-main-panel {
+            width: 100%;
+            max-width: 100%;
+            flex: 0 0 100%;
+        }
+
+        .pos-search-panel {
+            order: 1;
+        }
+
+        .pos-main-panel {
+            order: 2;
+        }
+
+        .pos-search-panel .card,
+        .pos-main-panel .card {
+            width: 100%;
+        }
+
+        .pos-search-panel .search-box {
+            height: 52px !important;
+            font-size: 18px !important;
+        }
+
+        .pos-table-scroll #productTable {
+            min-width: 0 !important;
+        }
+
+        .pos-table-scroll {
+            overflow-x: hidden !important;
+        }
+
+        .payment-field {
+            min-height: 72px;
+        }
+
+        .payment-currency {
+            min-width: 78px;
+            font-size: 25px;
+        }
+
+        .payment-field #paid {
+            height: 66px !important;
+            font-size: 32px !important;
+        }
+
+        /* The custom keypad must never appear on tablet/phone */
+        #numpad {
+            display: none !important;
+        }
+    }
+
+    /* Phone-specific sizing */
+    @media (max-width: 575.98px) {
+        .pos-layout {
+            margin-left: -5px;
+            margin-right: -5px;
+        }
+
+        .pos-main-panel,
+        .pos-search-panel {
+            padding-left: 5px;
+            padding-right: 5px;
+        }
+
+        .pos-search-panel .card-body,
+        .pos-main-panel .card-body {
+            padding: 10px !important;
+        }
+
+        .pos-search-panel h4 {
+            font-size: 18px;
+        }
+
+        .pos-table-scroll #productTable {
+            min-width: 0 !important;
+        }
+
+        .pos-table-scroll #productTable th,
+        .pos-table-scroll #productTable td {
+            padding: 8px !important;
+            font-size: 14px !important;
+        }
+
+        .payment-field {
+            min-height: 68px;
+            border-width: 2px;
+        }
+
+        .payment-currency {
+            min-width: 70px;
+            padding: 0 10px;
+            font-size: 22px;
+        }
+
+        .payment-field #paid {
+            height: 64px !important;
+            font-size: 28px !important;
+            padding: 6px 10px !important;
+        }
+
+        .checkout-btn {
+            min-height: 56px;
+            font-size: 21px !important;
+        }
+
+        /* Prevent the custom keypad from being displayed by JS */
+        body #numpad {
+            display: none !important;
+            visibility: hidden !important;
+        }
+    }
+
+
+    /* =========================================================
+       FULL POS PRODUCT TABLE
+       Desktop: all six columns remain visible.
+       Mobile: all six columns remain visible inside a touch-friendly
+       horizontal scroll area. Nothing is hidden or stacked.
+       ========================================================= */
+
+    #productTable {
+        width: 100%;
+        min-width: 760px !important;
+        margin-bottom: 0;
+        table-layout: fixed;
+        border-collapse: collapse;
+    }
+
+    #productTable th,
+    #productTable td {
+        box-sizing: border-box;
+        vertical-align: middle;
+    }
+
+    /* Column widths */
+    #productTable th:nth-child(1),
+    #productTable td:nth-child(1) {
+        width: 28%;
+    }
+
+    #productTable th:nth-child(2),
+    #productTable td:nth-child(2) {
+        width: 20%;
+    }
+
+    #productTable th:nth-child(3),
+    #productTable td:nth-child(3) {
+        width: 14%;
+    }
+
+    #productTable th:nth-child(4),
+    #productTable td:nth-child(4) {
+        width: 12%;
+    }
+
+    #productTable th:nth-child(5),
+    #productTable td:nth-child(5) {
+        width: 16%;
+    }
+
+    #productTable th:nth-child(6),
+    #productTable td:nth-child(6) {
+        width: 10%;
+    }
+
+    .cart-product-cell {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+    }
+
+    .cart-product-name {
+        display: block;
+        font-weight: 600;
+        line-height: 1.25;
+    }
+
+    .cart-unit-cell {
+        white-space: normal !important;
+    }
+
+    .cart-unit-cell .unit-select {
+        width: 100%;
+        min-width: 0;
+        height: 36px;
+        padding: 4px 7px;
+        box-sizing: border-box;
+    }
+
+    .cart-price-cell,
+    .cart-subtotal-cell {
+        white-space: nowrap !important;
+        font-weight: 600;
+    }
+
+    .cart-qty-cell {
+        text-align: center;
+    }
+
+    #productTable .qty {
+        width: 78px !important;
+        min-width: 78px !important;
+        max-width: 78px !important;
+        height: 36px;
+        text-align: center;
+        padding: 4px 6px !important;
+        box-sizing: border-box;
+    }
+
+    .cart-action-cell {
+        text-align: center !important;
+        white-space: nowrap !important;
+    }
+
+    .cart-action-cell .remove {
+        display: inline-block;
+        padding: 6px 8px;
+        background: #dc3545;
+        color: #fff;
+        border-radius: 4px;
+        font-size: 11px;
+        line-height: 1.15;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .cart-action-cell .remove:hover {
+        background: #c82333;
+    }
+
+    /* Make the cart itself the mobile scroll area. */
+    .pos-table-scroll {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto !important;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        scrollbar-width: thin;
+    }
+
+    .pos-table-scroll #productTable {
+        width: 760px;
+        min-width: 760px !important;
+    }
+
+    @media (max-width: 991.98px) {
+        .pos-table-scroll {
+            overflow-x: auto !important;
+        }
+
+        .pos-table-scroll #productTable {
+            width: 760px;
+            min-width: 760px !important;
+        }
+
+        #productTable th,
+        #productTable td {
+            padding: 6px !important;
+            font-size: 12px !important;
+        }
+
+        .cart-unit-cell .unit-select,
+        #productTable .qty {
+            height: 34px;
+            font-size: 12px !important;
+        }
+
+        #productTable .qty {
+            width: 74px !important;
+            min-width: 74px !important;
+            max-width: 74px !important;
+        }
+
+        .cart-action-cell .remove {
+            font-size: 10px;
+            padding: 6px 7px;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        /* Keep all six columns. The user can swipe left/right. */
+        .pos-table-scroll {
+            margin: 0;
+            padding: 0;
+            overflow-x: auto !important;
+            overflow-y: auto;
+            border-radius: 5px;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x pan-y;
+        }
+
+        .pos-table-scroll #productTable {
+            width: 760px !important;
+            min-width: 760px !important;
+            table-layout: fixed !important;
+        }
+
+        #productTable th,
+        #productTable td {
+            padding: 6px !important;
+            font-size: 11px !important;
+            box-sizing: border-box;
+        }
+
+        .cart-product-name {
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        .cart-unit-cell .unit-select {
+            width: 100% !important;
+            height: 32px !important;
+            font-size: 11px !important;
+            padding: 3px 5px !important;
+        }
+
+        #productTable .qty {
+            width: 70px !important;
+            min-width: 70px !important;
+            max-width: 70px !important;
+            height: 32px !important;
+            font-size: 11px !important;
+        }
+
+        .cart-price-cell,
+        .cart-subtotal-cell {
+            font-size: 11px !important;
+        }
+
+        .cart-action-cell .remove {
+            font-size: 9px;
+            padding: 5px 6px;
+        }
+    }
+
+    @media (max-width: 360px) {
+        .pos-table-scroll #productTable {
+            width: 720px !important;
+            min-width: 720px !important;
+        }
+
+        #productTable th,
+        #productTable td {
+            padding: 5px !important;
+            font-size: 10px !important;
+        }
+
+        .cart-product-name {
+            font-size: 11px;
+        }
+
+        .cart-unit-cell .unit-select {
+            height: 30px !important;
+            font-size: 10px !important;
+        }
+
+        #productTable .qty {
+            width: 66px !important;
+            min-width: 66px !important;
+            max-width: 66px !important;
+            height: 30px !important;
+            font-size: 10px !important;
+        }
+
+        .cart-action-cell .remove {
+            font-size: 8px;
+            padding: 5px 5px;
+        }
+    }
+
+    /* =========================================================
+       BARCODE SEARCH / SCANNER
+       ========================================================= */
+
+    .barcode-scan-btn {
+        min-width: 125px;
+        white-space: nowrap;
+    }
+
+    .barcode-search-row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+    }
+
+    .barcode-search-row .search-box {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .barcode-feedback {
+        display: none;
+        margin-top: 8px;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.35;
+    }
+
+    .barcode-feedback.error {
+        display: block;
+        color: #842029;
+        background: #f8d7da;
+        border: 1px solid #f5c2c7;
+    }
+
+    .barcode-feedback.success {
+        display: block;
+        color: #0f5132;
+        background: #d1e7dd;
+        border: 1px solid #badbcc;
+    }
+
+    @media (max-width: 575.98px) {
+        .barcode-search-row {
+            flex-direction: column;
+        }
+
+        .barcode-scan-btn {
+            width: 100%;
+            min-height: 48px;
+        }
+    }
+
+    
+    /* =========================================================
+       REMOTE MOBILE SCANNER
+       ========================================================= */
+
+    .mobile-scanner-destination-row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+        margin-bottom: 12px;
+    }
+
+    .mobile-scanner-destination-row input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .mobile-scanner-save-btn {
+        min-width: 82px;
+        white-space: nowrap;
+    }
+
+    .mobile-scanner-save-note {
+        margin-top: -7px;
+        margin-bottom: 12px;
+        font-size: 11px;
+        color: #6c757d;
+    }
+
+    .mobile-scanner-auto-note {
+        margin-bottom: 12px;
+        padding: 9px 10px;
+        border-radius: 6px;
+        background: #f8fbff;
+        border: 1px solid #d9e8ff;
+        color: #495057;
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
+    .mobile-open-scanner-btn {
+        display: none;
+    }
+
+    .mobile-scanner-desktop-btn {
+        display: inline-flex;
+    }
+
+    html,
+    body {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .pos-layout,
+    .pos-main-panel,
+    .pos-search-panel,
+    .pos-main-panel .card,
+    .pos-search-panel .card,
+    .pos-main-panel .card-body,
+    .pos-search-panel .card-body {
+        min-width: 0;
+    }
+
+    .mobile-scanner-btn {
+        margin-left: 5px;
+    }
+
+    .mobile-scanner-connection-box {
+        margin-top: 10px;
+        border: 1px solid #cfd7e0;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 4px 14px rgba(0,0,0,.08);
+        overflow: hidden;
+    }
+
+    .mobile-scanner-connection-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        background: #f5f7fa;
+        border-bottom: 1px solid #e1e5ea;
+    }
+
+    .mobile-scanner-close {
+        border: 0;
+        background: #dc3545;
+        color: #fff;
+        width: 32px;
+        height: 32px;
+        border-radius: 5px;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .mobile-scanner-connection-body {
+        padding: 12px;
+    }
+
+    .mobile-scanner-status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .mobile-scanner-status-row strong {
+        color: #856404;
+    }
+
+    .mobile-scanner-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .mobile-scanner-url-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+
+    .mobile-scanner-url-row input {
+        min-width: 0;
+        font-size: 13px;
+    }
+
+    .mobile-scanner-code-box {
+        border: 2px dashed #0d6efd;
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+        margin: 10px 0;
+        background: #f8fbff;
+    }
+
+    .mobile-scanner-code-label {
+        font-size: 12px;
+        color: #6c757d;
+        margin-bottom: 2px;
+    }
+
+    #mobileScannerCode {
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: 6px;
+        line-height: 1.1;
+    }
+
+    .mobile-scanner-help {
+        line-height: 1.45;
+        margin-bottom: 12px;
+    }
+
+    .mobile-scanner-connection-actions {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    @media (max-width: 991.98px) {
+        .mobile-scanner-desktop-btn {
+            display: none !important;
+        }
+
+        .mobile-open-scanner-btn {
+            display: flex !important;
+            width: 100%;
+            min-height: 48px;
+            align-items: center;
+            justify-content: center;
+            margin-top: 5px;
+            white-space: nowrap;
+        }
+
+        .mobile-scanner-destination-row,
+        .mobile-scanner-url-row {
+            flex-direction: column;
+        }
+
+        .mobile-scanner-destination-row .btn,
+        .mobile-scanner-url-row .btn {
+            width: 100%;
+        }
+
+        .mobile-scanner-destination-row input,
+        .mobile-scanner-url-row input {
+            width: 100%;
+        }
+
+        #mobileScannerCode {
+            font-size: 26px;
+        }
+
+        .pos-main-panel,
+        .pos-search-panel {
+            padding-left: 6px;
+            padding-right: 6px;
+        }
+
+        .pos-search-panel .card-body,
+        .pos-main-panel .card-body {
+            padding: 10px !important;
+        }
+
+        .card-header {
+            padding: 10px !important;
+        }
+
+        .card-header h2 {
+            font-size: 22px;
+            margin-bottom: 0;
+        }
+
+        .checkout-btn {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .mobile-scanner-connection-header {
+            padding: 9px 10px;
+        }
+
+        .mobile-scanner-connection-body {
+            padding: 10px;
+        }
+
+        .mobile-scanner-status-row {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .mobile-scanner-destination-row {
+            gap: 6px;
+        }
+
+        .mobile-scanner-save-btn {
+            min-height: 44px;
+        }
+
+        .mobile-scanner-url-row {
+            gap: 6px;
+        }
+
+        .pos-search-panel h4 {
+            font-size: 18px;
+        }
+
+        .barcode-search-row {
+            gap: 6px;
+        }
+
+        .barcode-search-row .search-box {
+            min-height: 48px;
+            font-size: 16px !important;
+        }
+
+        .barcode-scan-btn,
+        .mobile-open-scanner-btn {
+            min-height: 48px;
+            font-size: 15px !important;
+        }
+
+        .payment-field {
+            min-height: 64px;
+        }
+
+        .payment-currency {
+            min-width: 66px;
+            font-size: 21px;
+        }
+
+        .payment-field #paid {
+            height: 60px !important;
+            font-size: 27px !important;
+        }
+
+        .sales-history-section {
+            margin-top: 12px;
+            padding: 0 5px;
+        }
+
+        .sales-history-toggle {
+            min-height: 46px;
+            font-size: 15px;
+        }
+    }
+
+    /* =========================================================
+       SALES HISTORY - HIDDEN UNTIL REQUESTED
+       ========================================================= */
+
+    .sales-history-section {
+        width: 100%;
+        margin-top: 20px;
+    }
+
+    .sales-history-toggle {
+        width: 100%;
+        text-align: left;
+    }
+
+    .sales-history-panel {
+        display: none !important;
+        width: 100%;
+        margin-top: 12px;
+    }
+
+    .sales-history-panel.show {
+        display: block !important;
+    }
+
+    .sales-history-filter {
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 12px;
+    }
+
+    .sales-history-filter label {
+        font-weight: 600;
+    }
+
+    .sales-history-frame {
+        width: 100%;
+        overflow: hidden;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    .sales-history-frame iframe {
+        display: block;
+        width: 100%;
+        min-height: 500px;
+        border: 0;
+    }
+
+    @media (max-width: 767.98px) {
+        .sales-history-filter .row > div {
+            margin-bottom: 10px;
+        }
+
+        .sales-history-frame {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .sales-history-frame iframe {
+            min-width: 850px;
+        }
+    }
+
+</style>
 </head>
 
 <body class="fixed-left">
     <!-- Loader -->
-    <div id="preloader">
+    <!-- <div id="preloader">
         <div id="status">
             <div class="spinner"></div>
         </div>
-    </div><!-- Begin page -->
+    </div>Begin page -->
     <div id="wrapper">
         <!-- ========== Left Sidebar Start ========== -->
         <?php include "assets/sections/leftside.php" ?>
@@ -569,8 +1555,8 @@ $prices = $_POST['price'];
                                 <br>
                             </div>
                         </div><!-- end page title end breadcrumb -->
-                        <div class="row">
-                            <div class="col-8">
+                        <div class="row pos-layout">
+                            <div class="col-7 pos-main-panel">
                                 <div class="card m-b-30">
                                     <div class="card-body">
                                         <div class="card-header d-flex justify-content-between align-items-center">
@@ -593,25 +1579,19 @@ $prices = $_POST['price'];
                                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                                             <button type="button" class="close" data-dismiss="alert"
                                                 aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                                            <?php echo $msg ?>
+                                            <?php echo $errmsg ?>
                                         </div>
                                         <?php } ?>
                                         <form method="POST" action=""
                                             onsubmit="updateHiddenFields(); return validatePayment();">
                                             <div class="card-body">
-                                                <div style="
-        height: 350px;
-        overflow-y: auto;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        background: #fff;
-    ">
+                                                <div class="small text-muted d-md-none mb-1">
+                                                    All cart columns remain available on mobile. Swipe the table left or right to view them.
+                                                </div>
+                                                <div class="pos-table-scroll" style="height: 350px; overflow-y: auto; ">
                                                     <table id="productTable" class="table table-bordered"
                                                         style="margin-bottom:0;">
-                                                        <thead
-                                                            style="position: sticky; top: 0; background: #fff; z-index: 2;"
-                                                            <thead
-                                                            style="position: sticky; top: 0; background: #fff; z-index: 2;">
+                                                        <thead style="position: sticky; top: 0; background: #fff; z-index: 2;">
                                                             <tr>
                                                                 <th>Product</th>
                                                                 <th>Sale Type</th>
@@ -629,25 +1609,43 @@ $prices = $_POST['price'];
 
                                                 <br>
 
-                                                <label>
-                                                    <h4><b>Amount Paid:</b></h4>
-                                                </label><br>
-                                                <input style="height:80px; font-size:40px;" class="form-control"
-                                                    type="number" id="paid" step="0.01" placeholder="Enter amount paid"
-                                                    oninput="calculateBalance()">
-                                                <input type="hidden" name="total" id="total_input">
-                                                <input type="hidden" name="paid_amount" id="paid_input">
-                                                <input type="hidden" name="balance" id="balance_input">
-                                                <br>
-                                                <h3 id="balanceLabel"><strong>Balance: GH¢ <span
-                                                            id="balance">0.00</span></strong></h3>
-                                                <label>Payment Method:</label><br>
-                                                <select class="form-control" name="payment_method" id="payment_method"
-                                                    onchange="toggleCredit()">
-                                                    <option value="cash">Cash</option>
-                                                    <option value="momo">MoMo</option>
-                                                    <option value="credit">Credit</option>
-                                                </select>
+
+                                                    <label><h4><b>Payment Method:</b></h4></label><br>
+                                                    <select class="form-control" name="payment_method" id="payment_method"
+                                                        onchange="toggleCredit()">
+                                                        <option value="cash">Cash</option>
+                                                        <option value="momo">MoMo</option>
+                                                        <option value="credit">Credit</option>
+                                                    </select>
+
+                                                    <br>
+
+                                                    <label>
+                                                        <h4><b>Amount Paid:</b></h4>
+                                                    </label>
+                                                    <div class="payment-field">
+                                                        <div class="payment-currency">GH¢</div>
+                                                        <input
+                                                            class="form-control"
+                                                            type="number"
+                                                            id="paid"
+                                                            step="0.01"
+                                                            min="0"
+                                                            inputmode="decimal"
+                                                            autocomplete="off"
+                                                            placeholder="0.00"
+                                                            oninput="calculateBalance()">
+                                                    </div>
+
+                                                    <input type="hidden" name="total" id="total_input">
+                                                    <input type="hidden" name="paid_amount" id="paid_input">
+                                                    <input type="hidden" name="balance" id="balance_input">
+
+                                                    <br>
+                                                    <h3 id="balanceLabel">
+                                                        <strong>Balance: GH¢ <span id="balance">0.00</span></strong>
+                                                    </h3>
+
 
                                                 <div id="creditBox" style="display:none;">
                                                     <label>Select Customer:</label><br>
@@ -716,30 +1714,59 @@ $prices = $_POST['price'];
                                             row.setAttribute('data-id', id);
 
                                             row.innerHTML = `
-        <td>
-            ${name}
-            <input type="hidden" name="products[]" value="${id}">
-            <input type="hidden" name="price[]" class="price-input" value="${price}">
-            <input type="hidden" name="unit_qty[]" class="unit-qty" value="1">
-        </td>
+                                                <td class="cart-product-cell">
+                                                    <span class="cart-product-name">${name}</span>
+                                                    <input type="hidden"
+                                                        name="products[]"
+                                                        value="${id}">
+                                                    <input type="hidden"
+                                                        name="price[]"
+                                                        class="price-input"
+                                                        value="${price}">
+                                                    <input type="hidden"
+                                                        name="unit_qty[]"
+                                                        class="unit-qty"
+                                                        value="1">
+                                                </td>
 
-        <td>
-            <select class="form-control unit-select" onchange="updateRow(this)">
-                <option value="1" data-price="${price}">Loading...</option>
-            </select>
-        </td>
+                                                <td class="cart-unit-cell">
+                                                    <select class="form-control unit-select"
+                                                        onchange="updateRow(this)">
+                                                        <option value="1" data-price="${price}">
+                                                            Loading...
+                                                        </option>
+                                                    </select>
+                                                </td>
 
-        <td class="price">${price}</td>
+                                                <td class="price cart-price-cell">
+                                                    ${price}
+                                                </td>
 
-        <td>
-            <input type="number" step="0.01" value="1" min="0.01"
-                class="qty" name="qty[]" oninput="updateTotal()">
-        </td>
+                                                <td class="cart-qty-cell">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        value="1"
+                                                        min="0.01"
+                                                        class="qty"
+                                                        name="qty[]"
+                                                        inputmode="decimal"
+                                                        autocomplete="off"
+                                                        oninput="updateTotal()">
+                                                </td>
 
-        <td class="subtotal">0.00</td>
+                                                <td class="subtotal cart-subtotal-cell">
+                                                    0.00
+                                                </td>
 
-        <td><span class="remove" onclick="removeRow(this)">Remove</span></td>
-    `;
+                                                <td class="cart-action-cell">
+                                                    <span
+                                                        class="remove"
+                                                        onclick="removeRow(this)">
+                                                        Remove
+                                                    </span>
+                                                </td>
+                                            `;
 
                                             loadUnits(id, row, price, bulkprice); // 🔥 dynamic units
 
@@ -764,8 +1791,8 @@ $prices = $_POST['price'];
                                                     // fallback default
                                                     if (!units || units.length === 0) {
                                                         select.innerHTML = `
-                    <option value="1" data-price="${defaultPrice}">Piece</option>
-                `;
+                                                        <option value="1" data-price="${defaultPrice}">Piece</option>
+                                                    `;
                                                     } else {
 
                                                         units.forEach(u => {
@@ -880,35 +1907,50 @@ $prices = $_POST['price'];
                                             document.getElementById('balance_input').value =
                                                 document.getElementById('balance').innerText;
                                         }
-                                        // ✅ VALIDATION
-                                        function validatePayment() {
-                                            let method = document.getElementById('payment_method').value;
-                                            let balance = parseFloat(document.getElementById('balance').innerText);
+                                                                                            // ✅ VALIDATION
+                                                                                        function validatePayment() {
+                                                        let method = document.getElementById('payment_method').value;
+                                                        let paidInput = document.getElementById('paid').value.trim();
+                                                        let balance = parseFloat(document.getElementById('balance').innerText) || 0;
 
-                                            if (method !== 'credit' && balance < 0) {
-                                                alert("Insufficient payment!");
-                                                return false;
-                                            }
+                                                        // ❌ Require amount paid for cash/momo
+                                                        if (method !== 'credit' && paidInput === "") {
+                                                            alert("Please enter amount paid!");
+                                                            document.getElementById('paid').focus();
+                                                            return false;
+                                                        }
 
-                                            if (method === 'credit') {
-                                                let customer = document.querySelector('[name="customer_id"]').value;
-                                                let newCustomer = document.querySelector('[name="new_customer"]').value;
+                                                        // ❌ Prevent insufficient payment for non-credit
+                                                        if (method !== 'credit' && balance < 0) {
+                                                            alert("Insufficient payment!");
+                                                            return false;
+                                                        }
 
-                                                if (!customer && !newCustomer) {
-                                                    alert("Select or add a customer!");
-                                                    return false;
-                                                }
-                                            }
+                                                        // ✅ Credit requires customer
+                                                        if (method === 'credit') {
+                                                            let customer = document.querySelector('[name="customer_id"]').value;
+                                                            let newCustomer = document.querySelector('[name="new_customer"]').value.trim();
 
-                                            return true;
-                                        }
+                                                            if (!customer && !newCustomer) {
+                                                                alert("Select or add a customer!");
+                                                                return false;
+                                                            }
+                                                        }
+
+                                                        return true;
+                                                    }
 
 
 
                                         let activeInput = null;
 
-                                        // 👆 OPEN NUMPAD when clicking qty
+                                        // 👆 OPEN CUSTOM NUMPAD ONLY ON DESKTOP
+                                        // On phones/tablets the custom keypad is completely disabled.
                                         document.addEventListener("click", function(e) {
+                                            if (window.matchMedia("(max-width: 991.98px)").matches) {
+                                                return;
+                                            }
+
                                             if (e.target.classList.contains("qty") || e.target.id === "paid") {
                                                 activeInput = e.target;
                                                 showNumpad();
@@ -916,11 +1958,21 @@ $prices = $_POST['price'];
                                         });
 
                                         function showNumpad() {
-                                            document.getElementById("numpad").style.display = "block";
+                                            if (window.matchMedia("(max-width: 991.98px)").matches) {
+                                                return;
+                                            }
+
+                                            const numpad = document.getElementById("numpad");
+                                            if (numpad) {
+                                                numpad.style.display = "block";
+                                            }
                                         }
 
                                         function hideNumpad() {
-                                            document.getElementById("numpad").style.display = "none";
+                                            const numpad = document.getElementById("numpad");
+                                            if (numpad) {
+                                                numpad.style.display = "none";
+                                            }
                                         }
 
 
@@ -978,11 +2030,27 @@ $prices = $_POST['price'];
                                             }
                                         }
 
+
+                                        window.addEventListener("resize", function() {
+                                            if (window.matchMedia("(max-width: 991.98px)").matches) {
+                                                hideNumpad();
+                                                activeInput = null;
+                                            }
+                                        });
+
+                                        function isMobileLayout() {
+                                            return window.matchMedia("(max-width: 991.98px)").matches;
+                                        }
+
                                         function togglePOSMode() {
 
                                             document.body.classList.toggle("pos-mode");
 
-                                            // 🔥 Enter true fullscreen
+                                            // Fullscreen is useful on desktop POS, but should not be forced on phones/tablets.
+                                            if (isMobileLayout()) {
+                                                return;
+                                            }
+
                                             if (!document.fullscreenElement) {
                                                 document.documentElement.requestFullscreen().catch(err => {
                                                     console.log(err);
@@ -993,7 +2061,12 @@ $prices = $_POST['price'];
                                         }
 
                                         window.addEventListener("load", () => {
-                                            togglePOSMode();
+                                            if (isMobileLayout()) {
+                                                // Keep the compact POS styling on mobile without forcing browser fullscreen.
+                                                document.body.classList.add("pos-mode");
+                                            } else {
+                                                togglePOSMode();
+                                            }
                                         });
 
                                         function exitPOSMode() {
@@ -1011,6 +2084,11 @@ $prices = $_POST['price'];
 
                                         function enterPOSMode() {
                                             document.body.classList.add("pos-mode");
+
+                                            // Do not force fullscreen on phones/tablets.
+                                            if (isMobileLayout()) {
+                                                return;
+                                            }
 
                                             if (!document.fullscreenElement) {
                                                 document.documentElement.requestFullscreen().catch(err => console.log(
@@ -1038,20 +2116,22 @@ $prices = $_POST['price'];
 
                                         function exitPOS() {
 
-                                            let role = "<?= $_SESSION['user']['role'] ?>";
+                                            // Use the same role value loaded at the top of this page.
+                                            // Cashiers must be logged out when they exit the POS.
+                                            const role = <?php echo json_encode(strtolower(trim($role))); ?>;
 
                                             if (role === "cashier") {
-                                                // 🔴 cashier → logout completely
+                                                // 🔴 Cashier → logout completely
                                                 window.location.href = "logout.php";
-                                            } else {
-                                                // 🟢 admin/manager → only exit fullscreen
-                                                if (document.fullscreenElement) {
-                                                    document.exitFullscreen();
-                                                }
-
-                                                // optional: redirect to dashboard
-                                                window.location.href = "index.php";
+                                                return;
                                             }
+
+                                            // 🟢 Admin/manager/other roles → leave POS only
+                                            if (document.fullscreenElement) {
+                                                document.exitFullscreen().catch(err => console.log(err));
+                                            }
+
+                                            window.location.href = "index.php";
                                         }
                                         </script>
 
@@ -1061,17 +2141,101 @@ $prices = $_POST['price'];
 
                             </div>
 
-                            <div class="col-4">
+                            <div class="col-5 pos-search-panel">
                                 <div class="card m-b-30">
                                     <div class="card-body">
 
                                         <h4>Product Search</h4>
 
                                         <div class="card-header-form">
-                                            <input type="text" id="search" class="search-box form-control"
-                                                placeholder="Search product...">
+                                            <div class="barcode-search-row">
+                                                <input type="text" id="search" class="search-box form-control"
+                                                    placeholder="Search product / scan barcode..."
+                                                    autocomplete="off">
+                                                <button type="button"
+                                                    class="btn btn-success barcode-scan-btn"
+                                                    onclick="openPOSBarcodeScanner()">
+                                                    📷 Scan Barcode
+                                                </button>
+
+                                                <button type="button"
+                                                    class="btn btn-primary mobile-scanner-btn mobile-scanner-desktop-btn"
+                                                    onclick="openMobileScannerConnection()">
+                                                    📱 Connect Mobile Scanner
+                                                </button>
+
+                                                <button type="button"
+                                                    class="btn btn-primary mobile-scanner-btn mobile-open-scanner-btn"
+                                                    onclick="openMobileScannerFromMobileView()">
+                                                    📱 Open Mobile Scanner
+                                                </button>
+                                            </div>
 
                                             <div id="results" class="results"></div>
+
+                                            <div id="barcodeFeedback"
+                                                class="barcode-feedback"
+                                                role="alert"
+                                                aria-live="assertive"></div>
+
+                                            <!-- =====================================================
+                                                 REMOTE MOBILE SCANNER CONNECTION
+                                                 ===================================================== -->
+                                            <div id="mobileScannerConnectionBox"
+                                                class="mobile-scanner-connection-box"
+                                                style="display:none;">
+
+                                                <div class="mobile-scanner-connection-header">
+                                                    <strong>📱 Mobile Scanner Connection</strong>
+                                                    <button type="button"
+                                                        class="mobile-scanner-close"
+                                                        onclick="closeMobileScannerConnection()">
+                                                        &times;
+                                                    </button>
+                                                </div>
+
+                                                <div class="mobile-scanner-connection-body">
+
+                                                    <div class="mobile-scanner-status-row">
+                                                        <span>Status:</span>
+                                                        <strong id="mobileScannerStatus">
+                                                            Not connected
+                                                        </strong>
+                                                    </div>
+
+                                                    <label class="mobile-scanner-label">
+                                                        Mobile scanner address
+                                                    </label>
+
+                                                    <div class="mobile-scanner-url-row">
+                                                        <input type="text"
+                                                            id="mobileScannerUrl"
+                                                            class="form-control"
+                                                            readonly>
+                                                        <button type="button"
+                                                            class="btn btn-secondary"
+                                                            onclick="copyMobileScannerUrl()">
+                                                            Copy
+                                                        </button>
+                                                    </div>
+
+                                                    <div class="mobile-scanner-auto-note">
+                                                        No pairing code is required. Open the Mobile Scanner on the phone and it will automatically find this active POS connection.
+                                                    </div>
+
+                                                    <div class="mobile-scanner-connection-actions">
+                                                        <button type="button"
+                                                            class="btn btn-danger"
+                                                            onclick="stopMobileScannerConnection()">
+                                                            Stop Connection
+                                                        </button>
+                                                    </div>
+
+                                                </div>
+                                            </div>
+
+                                            <div><hr></div>
+                                           
 
                                             <div id="numpad">
                                                 <div class="numpad-grid">
@@ -1116,27 +2280,726 @@ $prices = $_POST['price'];
 
 
                                         <script>
-                                        // 🔍 SEARCH
-                                        document.getElementById('search').addEventListener('keyup', function() {
-                                            let q = this.value;
+                                        // 🔍 PRODUCT SEARCH + BARCODE INPUT
+                                        const posSearchInput = document.getElementById('search');
+                                        const posResults = document.getElementById('results');
+                                        const barcodeFeedback = document.getElementById('barcodeFeedback');
+                                        let posBarcodeLookupTimer = null;
+                                        let barcodeAudioContext = null;
+
+                                        function showBarcodeFeedback(message, type) {
+                                            if (!barcodeFeedback) return;
+
+                                            barcodeFeedback.className = 'barcode-feedback ' + (type || 'error');
+                                            barcodeFeedback.textContent = message;
+                                        }
+
+                                        function clearBarcodeFeedback() {
+                                            if (!barcodeFeedback) return;
+
+                                            barcodeFeedback.className = 'barcode-feedback';
+                                            barcodeFeedback.textContent = '';
+                                        }
+
+                                        function playBarcodeBeep() {
+                                            try {
+                                                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                                                if (!AudioCtx) return;
+
+                                                if (!barcodeAudioContext) {
+                                                    barcodeAudioContext = new AudioCtx();
+                                                }
+
+                                                const ctx = barcodeAudioContext;
+
+                                                const startTone = function() {
+                                                    const oscillator = ctx.createOscillator();
+                                                    const gain = ctx.createGain();
+
+                                                    oscillator.type = 'sine';
+                                                    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+
+                                                    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                                                    gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.01);
+                                                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+
+                                                    oscillator.connect(gain);
+                                                    gain.connect(ctx.destination);
+
+                                                    oscillator.start(ctx.currentTime);
+                                                    oscillator.stop(ctx.currentTime + 0.13);
+                                                };
+
+                                                if (ctx.state === 'suspended') {
+                                                    ctx.resume().then(startTone).catch(function() {});
+                                                } else {
+                                                    startTone();
+                                                }
+                                            } catch (error) {
+                                                console.warn('BARCODE BEEP ERROR:', error);
+                                            }
+                                        }
+
+                                        // Prime browser audio after the first user interaction so that
+                                        // scanner callbacks can still play the success beep later.
+                                        document.addEventListener('pointerdown', function() {
+                                            try {
+                                                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                                                if (!AudioCtx) return;
+
+                                                if (!barcodeAudioContext) {
+                                                    barcodeAudioContext = new AudioCtx();
+                                                }
+
+                                                if (barcodeAudioContext.state === 'suspended') {
+                                                    barcodeAudioContext.resume().catch(function() {});
+                                                }
+                                            } catch (error) {
+                                                // Audio is optional; barcode scanning must continue.
+                                            }
+                                        }, { once: true, passive: true });
+
+                                        posSearchInput.addEventListener('input', function() {
+                                            let q = this.value.trim();
+
+                                            clearBarcodeFeedback();
 
                                             if (q.length < 1) {
-                                                document.getElementById('results').innerHTML = '';
+                                                posResults.innerHTML = '';
                                                 return;
                                             }
 
-                                            fetch('assets/scripts/search.php?q=' + q)
-                                                .then(res => res.text())
-                                                .then(data => document.getElementById('results').innerHTML =
-                                                    data);
+                                            clearTimeout(posBarcodeLookupTimer);
+
+                                            // Keep normal product search working while allowing a
+                                            // physical scanner to finish with Enter below.
+                                            posBarcodeLookupTimer = setTimeout(function() {
+                                                fetch('assets/scripts/search.php?q=' + encodeURIComponent(q))
+                                                    .then(res => res.text())
+                                                    .then(data => posResults.innerHTML = data)
+                                                    .catch(err => console.error('PRODUCT SEARCH ERROR:', err));
+                                            }, 180);
                                         });
+
+                                        // Physical USB barcode scanners normally finish with Enter.
+                                        posSearchInput.addEventListener('keydown', function(e) {
+                                            if (e.key !== 'Enter') return;
+
+                                            e.preventDefault();
+
+                                            let code = this.value.trim();
+                                            if (!code) return;
+
+                                            clearTimeout(posBarcodeLookupTimer);
+                                            lookupBarcodeAndAdd(code, true);
+                                        });
+
+                                        function lookupBarcodeAndAdd(code, force) {
+                                            code = String(code || '').trim();
+                                            if (!code) return;
+
+                                            clearBarcodeFeedback();
+
+                                            fetch('assets/scripts/barcode_lookup.php?barcode=' + encodeURIComponent(code))
+                                                .then(res => {
+                                                    if (!res.ok) {
+                                                        throw new Error('Barcode lookup request failed with HTTP ' + res.status);
+                                                    }
+                                                    return res.json();
+                                                })
+                                                .then(data => {
+                                                    if (data.success && data.product) {
+                                                        playBarcodeBeep();
+
+                                                        addProduct(
+                                                            data.product.productid,
+                                                            data.product.pname,
+                                                            data.product.sellingprice,
+                                                            data.product.sellingprice
+                                                        );
+
+                                                        posResults.innerHTML = '';
+                                                        posSearchInput.value = '';
+                                                        return;
+                                                    }
+
+                                                    // Only show an error when this request came from an actual
+                                                    // barcode scan / Enter action. Normal typing continues to
+                                                    // use the product-search results without an error message.
+                                                    if (force) {
+                                                        posResults.innerHTML = '';
+                                                        showBarcodeFeedback(
+                                                            'Barcode not found in the database: ' + code,
+                                                            'error'
+                                                        );
+                                                        posSearchInput.select();
+                                                    } else if (code.length > 1) {
+                                                        fetch('assets/scripts/search.php?q=' + encodeURIComponent(code))
+                                                            .then(res => res.text())
+                                                            .then(data => posResults.innerHTML = data)
+                                                            .catch(err => console.error('PRODUCT SEARCH ERROR:', err));
+                                                    }
+                                                })
+                                                .catch(err => {
+                                                    console.error('BARCODE LOOKUP ERROR:', err);
+
+                                                    if (force) {
+                                                        posResults.innerHTML = '';
+                                                        showBarcodeFeedback(
+                                                            'Unable to check barcode "' + code + '". Please check the POS server/database connection.',
+                                                            'error'
+                                                        );
+                                                    } else {
+                                                        fetch('assets/scripts/search.php?q=' + encodeURIComponent(code))
+                                                            .then(res => res.text())
+                                                            .then(data => posResults.innerHTML = data)
+                                                            .catch(searchErr => console.error('PRODUCT SEARCH ERROR:', searchErr));
+                                                    }
+                                                });
+                                        }
+
+
+                                        // =====================================================
+                                        // 📱 REMOTE MOBILE SCANNER
+                                        // The phone discovers the active scanner session on this
+                                        // same POS automatically. No pairing code is required.
+                                        // =====================================================
+
+                                        let mobileScannerPollTimer = null;
+                                        let mobileScannerToken = null;
+                                        let mobileScannerRunning = false;
+
+                                        function getMobileScannerUrl() {
+                                            let protocol = window.location.protocol || 'http:';
+                                            let host = window.location.hostname || '';
+                                            let port = window.location.port ? ':' + window.location.port : '';
+                                            const detectedPosServerIp = <?= json_encode($posServerIp); ?>;
+
+                                            /*
+                                             * When this PC opened the POS with localhost,
+                                             * localhost would point back to the phone itself.
+                                             * Use the PC's detected LAN IP instead.
+                                             */
+                                            if (
+                                                (host === 'localhost' || host === '127.0.0.1' || host === '::1') &&
+                                                detectedPosServerIp
+                                            ) {
+                                                host = detectedPosServerIp;
+                                            }
+
+                                            if (!host) {
+                                                host = detectedPosServerIp || 'localhost';
+                                            }
+
+                                            return protocol + '//' + host + port + '/philynda/mobile_scanner.php?_=' + Date.now();
+                                        }
+
+                                        function setMobileScannerStatus(message, connected) {
+                                            const el = document.getElementById('mobileScannerStatus');
+                                            if (!el) return;
+
+                                            el.textContent = message;
+                                            el.style.color = connected ? '#198754' : '#856404';
+                                        }
+
+                                        function openMobileScannerConnection() {
+                                            const box = document.getElementById('mobileScannerConnectionBox');
+                                            const urlInput = document.getElementById('mobileScannerUrl');
+
+                                            if (box) box.style.display = 'block';
+                                            if (urlInput) urlInput.value = getMobileScannerUrl();
+
+                                            startMobileScannerConnection();
+                                        }
+
+                                        /*
+                                         * AUTO-START MOBILE SCANNER ON POS OPEN
+                                         *
+                                         * The POS desktop creates the scanner session automatically.
+                                         * No "Connect Scanner" button is required.
+                                         *
+                                         * Do this only on desktop-sized screens. A phone/tablet should
+                                         * open the mobile scanner page instead of creating a desktop session.
+                                         */
+                                        let mobileScannerAutoStarted = false;
+
+                                        function autoStartMobileScannerOnPOS() {
+                                            if (mobileScannerAutoStarted) return;
+
+                                            if (window.matchMedia('(max-width: 991.98px)').matches) {
+                                                return;
+                                            }
+
+                                            mobileScannerAutoStarted = true;
+
+                                            const urlInput = document.getElementById('mobileScannerUrl');
+                                            if (urlInput) {
+                                                urlInput.value = getMobileScannerUrl();
+                                            }
+
+                                            startMobileScannerConnection();
+                                        }
+
+                                        function closeMobileScannerConnection() {
+                                            const box = document.getElementById('mobileScannerConnectionBox');
+                                            if (box) box.style.display = 'none';
+                                        }
+
+                                        async function startMobileScannerConnection() {
+                                            try {
+                                                const response = await fetch(
+                                                    'assets/scripts/mobile_scanner_api.php?action=start&_=' + Date.now(),
+                                                    {
+                                                        method: 'POST',
+                                                        credentials: 'same-origin',
+                                                        cache: 'no-store'
+                                                    }
+                                                );
+
+                                                const responseText = await response.text();
+                                                let data = null;
+
+                                                try {
+                                                    data = JSON.parse(responseText);
+                                                } catch (parseError) {
+                                                    console.error('MOBILE SCANNER START NON-JSON RESPONSE:', response.status, responseText);
+                                                    setMobileScannerStatus(
+                                                        'Server returned HTTP ' + response.status + ' instead of scanner JSON. Check the API URL/PHP error.',
+                                                        false
+                                                    );
+                                                    return;
+                                                }
+
+                                                console.log('MOBILE SCANNER START RESPONSE:', response.status, data);
+
+                                                if (!response.ok || !data.success || !data.token) {
+                                                    setMobileScannerStatus(
+                                                        data.message || ('Unable to start mobile scanner connection. HTTP ' + response.status),
+                                                        false
+                                                    );
+                                                    return;
+                                                }
+
+                                                mobileScannerToken = String(data.token);
+                                                mobileScannerRunning = true;
+
+                                                const urlInput = document.getElementById('mobileScannerUrl');
+                                                if (urlInput) urlInput.value = getMobileScannerUrl();
+
+                                                setMobileScannerStatus('Waiting for phone to connect automatically...', false);
+                                                startMobileScannerPolling();
+
+                                            } catch (error) {
+                                                console.error('MOBILE SCANNER START ERROR:', error);
+                                                setMobileScannerStatus(
+                                                    'Unable to start mobile scanner connection: ' + error.message,
+                                                    false
+                                                );
+                                            }
+                                        }
+
+                                        function startMobileScannerPolling() {
+                                            stopMobileScannerPolling();
+
+                                            const poll = async function() {
+                                                if (!mobileScannerRunning || !mobileScannerToken) return;
+
+                                                try {
+                                                    const response = await fetch(
+                                                        'assets/scripts/mobile_scanner_api.php?action=poll&token=' +
+                                                        encodeURIComponent(mobileScannerToken) + '&_=' + Date.now(),
+                                                        {
+                                                            method: 'GET',
+                                                            cache: 'no-store'
+                                                        }
+                                                    );
+
+                                                    const data = await response.json();
+
+                                                    if (!response.ok || data.success === false) {
+                                                        setMobileScannerStatus(
+                                                            data.message || 'Mobile scanner connection ended.',
+                                                            false
+                                                        );
+                                                        mobileScannerRunning = false;
+                                                        mobileScannerToken = null;
+                                                        return;
+                                                    }
+
+                                                    if (data.paired) {
+                                                        setMobileScannerStatus(
+                                                            data.device ? 'Phone connected: ' + data.device : 'Phone connected',
+                                                            true
+                                                        );
+                                                    } else {
+                                                        setMobileScannerStatus(
+                                                            'Waiting for phone to connect automatically...',
+                                                            false
+                                                        );
+                                                    }
+
+                                                    if (data.barcode) {
+                                                        lookupBarcodeAndAdd(String(data.barcode), true);
+                                                    }
+
+                                                } catch (error) {
+                                                    console.error('MOBILE SCANNER POLL ERROR:', error);
+                                                }
+
+                                                if (mobileScannerRunning) {
+                                                    mobileScannerPollTimer = setTimeout(poll, 500);
+                                                }
+                                            };
+
+                                            poll();
+                                        }
+
+                                        function stopMobileScannerPolling() {
+                                            if (mobileScannerPollTimer) {
+                                                clearTimeout(mobileScannerPollTimer);
+                                                mobileScannerPollTimer = null;
+                                            }
+                                        }
+
+                                        async function stopMobileScannerConnection() {
+                                            mobileScannerRunning = false;
+                                            stopMobileScannerPolling();
+
+                                            try {
+                                                if (mobileScannerToken) {
+                                                    await fetch(
+                                                        'assets/scripts/mobile_scanner_api.php?action=stop&token=' +
+                                                        encodeURIComponent(mobileScannerToken) + '&_=' + Date.now(),
+                                                        {
+                                                            method: 'POST',
+                                                            cache: 'no-store'
+                                                        }
+                                                    );
+                                                }
+                                            } catch (error) {
+                                                console.error('MOBILE SCANNER STOP ERROR:', error);
+                                            }
+
+                                            mobileScannerToken = null;
+                                            setMobileScannerStatus('Not connected', false);
+                                        }
+
+                                        function copyMobileScannerUrl() {
+                                            const input = document.getElementById('mobileScannerUrl');
+                                            if (!input) return;
+
+                                            input.select();
+                                            input.setSelectionRange(0, input.value.length);
+
+                                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                                navigator.clipboard.writeText(input.value)
+                                                    .then(function() {
+                                                        alert('Mobile scanner address copied.');
+                                                    })
+                                                    .catch(function() {
+                                                        alert('Copy failed. Please copy the address manually.');
+                                                    });
+                                            } else {
+                                                try {
+                                                    document.execCommand('copy');
+                                                    alert('Mobile scanner address copied.');
+                                                } catch (error) {
+                                                    alert('Please copy the address manually.');
+                                                }
+                                            }
+                                        }
+
+                                        window.addEventListener('beforeunload', function() {
+                                            if (!mobileScannerToken) return;
+
+                                            try {
+                                                navigator.sendBeacon(
+                                                    'assets/scripts/mobile_scanner_api.php?action=stop&token=' +
+                                                    encodeURIComponent(mobileScannerToken),
+                                                    ''
+                                                );
+                                            } catch (error) {
+                                                // Ignore unload cleanup failures.
+                                            }
+                                        });
+
+                                        // 📱 OPEN REMOTE MOBILE SCANNER FROM MOBILE POS VIEW
+                                        // This button is shown only on tablets/phones.
+                                        function openMobileScannerFromMobileView() {
+                                            const scannerUrl = getMobileScannerUrl();
+
+                                            if (!scannerUrl) {
+                                                alert('Mobile scanner address could not be determined.');
+                                                return;
+                                            }
+
+                                            console.log('OPENING MOBILE SCANNER:', scannerUrl);
+
+                                            // Open the scanner without requiring the user to type the IP.
+                                            const newWindow = window.open(
+                                                scannerUrl,
+                                                '_blank'
+                                            );
+
+                                            // If the browser blocks the new tab, navigate the current page.
+                                            if (!newWindow) {
+                                                window.location.href = scannerUrl;
+                                            }
+                                        }
+
+                                        // 📷 PHONE CAMERA BARCODE SCANNER
+                                        function openPOSBarcodeScanner() {
+                                            if (typeof openBarcodeScanner !== 'function') {
+                                                alert('Barcode scanner is not loaded.');
+                                                return;
+                                            }
+
+                                            openBarcodeScanner(function(code) {
+                                                lookupBarcodeAndAdd(code, true);
+                                            });
+                                        }
                                         </script>
                                     </div>
+                                    
                                 </div>
                             </div>
                         </div>
 
+                                            </div>
+                    <!-- END POS LAYOUT -->
+
+
+                    <!-- =====================================================
+                         SALES HISTORY - STACKED AT THE BOTTOM
+                         ===================================================== -->
+
+                    <div class="sales-history-section">
+
+                        <!-- Toggle Button -->
+                        <button
+                            type="button"
+                            id="salesHistoryToggle"
+                            class="btn btn-primary sales-history-toggle"
+                            onclick="toggleSalesHistory()"
+                            aria-expanded="false"
+                            aria-controls="salesHistoryPanel">
+
+                            <span id="salesHistoryIcon">+</span>
+                            <strong id="salesHistoryButtonText">
+                                Show Sales History
+                            </strong>
+
+                        </button>
+
+
+                        <!-- Hidden Sales History -->
+                        <div
+                            id="salesHistoryPanel"
+                            class="sales-history-panel"
+                            style="display:none;">
+
+                            <!-- Date Filter -->
+                            <div class="sales-history-filter">
+
+                                <div class="row align-items-end">
+
+                                    <!-- FROM DATE -->
+                                    <div class="col-md-4">
+                                        <label for="salesFromDate">
+                                            From Date
+                                        </label>
+
+                                        <input
+                                            type="date"
+                                            id="salesFromDate"
+                                            class="form-control">
+                                    </div>
+
+
+                                    <!-- TO DATE -->
+                                    <div class="col-md-4">
+                                        <label for="salesToDate">
+                                            To Date
+                                        </label>
+
+                                        <input
+                                            type="date"
+                                            id="salesToDate"
+                                            class="form-control">
+                                    </div>
+
+
+                                    <!-- BUTTONS -->
+                                    <div class="col-md-4">
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-success"
+                                            onclick="filterSalesHistory()">
+
+                                            Filter
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-secondary"
+                                            onclick="clearSalesHistoryFilter()">
+
+                                            Clear
+                                        </button>
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+                            <!-- Sales History -->
+                            <div class="sales-history-frame">
+
+                                <iframe
+                                    id="salesHistoryFrame"
+                                    width="100%"
+                                    height="500"
+                                    src="about:blank"
+                                    title="Sales History">
+                                </iframe>
+
+                            </div>
+
+                        </div>
+
                     </div>
+
+
+                    <!-- SALES HISTORY JAVASCRIPT -->
+
+                    <script>
+
+                    function toggleSalesHistory() {
+
+                        const panel =
+                            document.getElementById('salesHistoryPanel');
+
+                        const toggle =
+                            document.getElementById('salesHistoryToggle');
+
+                        const icon =
+                            document.getElementById('salesHistoryIcon');
+
+                        const text =
+                            document.getElementById('salesHistoryButtonText');
+
+                        if (panel.classList.contains('show')) {
+
+                            // HIDE
+                            panel.classList.remove('show');
+                            panel.style.display = 'none';
+
+                            icon.innerHTML = '+';
+
+                            text.innerHTML = 'Show Sales History';
+                            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+
+                        } else {
+
+                            // SHOW
+                            panel.classList.add('show');
+                            panel.style.display = 'block';
+
+                            icon.innerHTML = '−';
+
+                            text.innerHTML = 'Hide Sales History';
+                            if (toggle) toggle.setAttribute('aria-expanded', 'true');
+
+
+                            // Load history only when opened
+                            const frame =
+                                document.getElementById('salesHistoryFrame');
+
+                            if (
+                                frame.src === 'about:blank' ||
+                                frame.src === ''
+                            ) {
+
+                                filterSalesHistory();
+
+                            }
+
+                        }
+
+                    }
+
+
+                    function filterSalesHistory() {
+
+                        const from =
+                            document.getElementById('salesFromDate').value;
+
+                        const to =
+                            document.getElementById('salesToDate').value;
+
+
+                        // Validate dates
+                        if (from && to && from > to) {
+
+                            alert('From Date cannot be greater than To Date.');
+
+                            return;
+                        }
+
+
+                        let url = 'saleslog2.php';
+
+
+                        const params = new URLSearchParams();
+
+
+                        if (from) {
+                            params.append('from_date', from);
+                        }
+
+                        if (to) {
+                            params.append('to_date', to);
+                        }
+
+
+                        if (params.toString() !== '') {
+
+                            url += '?' + params.toString();
+
+                        }
+
+
+                        document.getElementById(
+                            'salesHistoryFrame'
+                        ).src = url;
+
+                    }
+
+
+                    function clearSalesHistoryFilter() {
+
+                        document.getElementById(
+                            'salesFromDate'
+                        ).value = '';
+
+                        document.getElementById(
+                            'salesToDate'
+                        ).value = '';
+
+
+                        filterSalesHistory();
+
+                    }
+
+                    </script>
+
+                    </div>
+
+
+
                 </div>
 
             </div>
@@ -1151,41 +3014,53 @@ $prices = $_POST['price'];
     </div><!-- END wrapper -->
 
 
-    <!-- 🔢 NUMPAD -->
-    <!-- <div id="numpad" style="
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #222;
-    padding: 10px;
-    border-radius: 10px;
-    display: none;
-    z-index: 9999;
-">
-        <div style="display:grid; grid-template-columns:repeat(3,72px); gap:6px;">
-            <button onclick="pressKey('1')">1</button>
-            <button onclick="pressKey('2')">2</button>
-            <button onclick="pressKey('3')">3</button>
-
-            <button onclick="pressKey('4')">4</button>
-            <button onclick="pressKey('5')">5</button>
-            <button onclick="pressKey('6')">6</button>
-
-            <button onclick="pressKey('7')">7</button>
-            <button onclick="pressKey('8')">8</button>
-            <button onclick="pressKey('9')">9</button>
-
-            <button onclick="pressKey('.')">.</button>
-            <button onclick="pressKey('0')">0</button>
-            <button onclick="clearInput()">C</button>
-
-        </div>
-        <button style="margin-top:5px; width:100%;" onclick="backspace()">⌫</button>
-        <button style="margin-top:5px; width:100%;" onclick="closeNumpad()">Close</button>
-    </div> -->
-    <!-- jQuery  -->
+    
     <?php include "assets/sections/footers/jqueryscripts.php" ?>
+
+    <!-- Local phone-camera barcode scanner -->
+    <?php include "assets/scripts/barcode_scanner.php" ?>
+
+    <script>
+        /*
+         * Start the remote phone scanner automatically whenever the POS
+         * is opened on a desktop. The user does not need to click a
+         * scanner connection button.
+         */
+        document.addEventListener('DOMContentLoaded', function () {
+            /*
+             * Automatically create the mobile-scanner session when the POS
+             * page loads on the desktop. The Connect Mobile Scanner button
+             * is no longer needed to start the connection.
+             *
+             * The connection panel is opened so the cashier can see the
+             * connection status and the phone-scanner address immediately.
+             * The phone must still open mobile_scanner.php and grant camera
+             * permission before it can scan barcodes.
+             */
+            setTimeout(function () {
+                if (window.matchMedia('(max-width: 991.98px)').matches) {
+                    return;
+                }
+
+                const connectionBox = document.getElementById('mobileScannerConnectionBox');
+                const urlInput = document.getElementById('mobileScannerUrl');
+
+                if (connectionBox) {
+                    connectionBox.style.display = 'block';
+                }
+
+                if (urlInput && typeof getMobileScannerUrl === 'function') {
+                    urlInput.value = getMobileScannerUrl();
+                }
+
+                if (typeof autoStartMobileScannerOnPOS === 'function') {
+                    autoStartMobileScannerOnPOS();
+                }
+            }, 300);
+        });
+    </script>
 </body>
 <!-- Mirrored from mannatthemes.com/annex/vertical/form-advanced.html by HTTrack Website Copier/3.x [XR&CO'2014], Sat, 25 Apr 2026 11:14:09 GMT -->
 
 </html>
+

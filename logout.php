@@ -15,6 +15,6 @@ if(isset($_GET['force']) && $_GET['force'] == 1){
 }
 
 // otherwise block
-header("Location: index.php");
+header("Location: login.php");
 exit;
 ?>

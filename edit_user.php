@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                                             <button type="button" class="close" data-dismiss="alert"
                                                 aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                                            <?php echo $msg ?>
+                                            <?php echo $errmsg ?>
                                         </div>
                                         <?php } ?>
                                         <form method="post" action="">
